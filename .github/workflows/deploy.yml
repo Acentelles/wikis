@@ -25,7 +25,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install mdbook and mdbook-katex
-        run: cargo install --locked mdbook mdbook-katex
+        run: cargo install --locked --version 0.4.43 mdbook && cargo install --locked --version 0.9.0 mdbook-katex
 
       - name: Build site
         run: |
