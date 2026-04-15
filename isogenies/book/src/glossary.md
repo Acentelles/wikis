@@ -15,7 +15,7 @@ transformations on the lattice $\mathbb{Z}^n$. They act on lattice bases
 without changing the lattice itself, and on Gram matrices by
 $Q \mapsto U^\top Q U$, which is the central operation in the Lattice
 Isomorphism Problem (see the
-[LIP arithmetisation idea](./papers/lip-arithmetisation-idea.md)).
+[LIP arithmetisation idea](./ideas/lip-arithmetisation.md)).
 
 Lattice term, included here because LIP shows up in the SNARK-arithmetisation
 entries on this wiki.

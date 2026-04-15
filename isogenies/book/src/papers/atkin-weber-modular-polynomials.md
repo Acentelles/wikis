@@ -143,7 +143,7 @@ and nothing else. Together with the Rust counter, this makes the whole
 
 ## Related notes
 
-- [Project idea: arithmetising LIP as R1CS](./lip-arithmetisation-idea.md):
+- [Project idea: arithmetising LIP as R1CS](../ideas/lip-arithmetisation.md):
   a direct analogue of this line of work for the Lattice Isomorphism
   Problem, where the "modular equation" is replaced by the quadratic system
   $U^\top Q_0 U = Q_1$.

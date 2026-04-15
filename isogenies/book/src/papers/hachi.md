@@ -113,7 +113,7 @@ verifier time.
 ## Hachi in a Spartan-over-LIP pipeline
 
 Putting the pieces together for the
-[LIP arithmetisation idea](./lip-arithmetisation-idea.md):
+[LIP arithmetisation idea](../ideas/lip-arithmetisation.md):
 
 1. **R1CS arithmetisation.** $N = n(n+1)/2$ rank-1 quadratic constraints
    encoding $U^\top Q_0 U = Q_1$, witness $z \in \mathbb{F}_p^{n^2 + \mathrm{aux}}$.

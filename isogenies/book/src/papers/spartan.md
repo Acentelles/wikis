@@ -5,7 +5,7 @@
 > CRYPTO 2020, ePrint [2019/550](https://eprint.iacr.org/2019/550)
 
 Background entry, referenced from the
-[LIP arithmetisation idea](./lip-arithmetisation-idea.md) and anywhere else
+[LIP arithmetisation idea](../ideas/lip-arithmetisation.md) and anywhere else
 on this wiki that invokes "sum-check-based SNARK" as a cost model.
 
 ## TL;DR
@@ -208,7 +208,7 @@ $\log n$ term is the multilinear commitment opening of $\widetilde z$.
 
 For arithmetisations that produce many scalar residuals with a clean
 polynomial structure, like the LIP residuals $\{f_{i,k}\}$ in
-[this entry](./lip-arithmetisation-idea.md), Spartan (or any of its
+[this entry](../ideas/lip-arithmetisation.md), Spartan (or any of its
 descendants) lets you package all residuals into a single multilinear
 extension and certify them with one sum-check. That is the mechanism by
 which the LIP arithmetisation's $N = n(n+1)/2$ residuals collapse to a
