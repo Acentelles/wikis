@@ -5,5 +5,3 @@ src = "src"
 title = "Isogeny-Based Cryptography Notes"
 
 [preprocessor.katex]
-after = ["links"]
-static-css = true
