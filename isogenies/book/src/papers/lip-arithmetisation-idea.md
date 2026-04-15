@@ -70,28 +70,123 @@ So LIP is about as arithmetisation-friendly a hard relation as you can hope
 for: it is *natively* quadratic, it has a clean block structure, and the
 number of constraints is $n(n+1)/2$ without any clever tricks.
 
-## A cheap random-linear-combination optimisation
+## Aggregating the residuals: when it helps, when it does not
 
-Even $n(n+1)/2$ can be a lot of constraints once $n$ gets into the HAWK
-range ($n \approx 512$, so $\sim 130{,}000$ quadratic constraints). A
-standard move in SNARK-land:
+Even $n(n+1)/2$ can be a lot of equations once $n$ gets into the HAWK
+range ($n \approx 512$, so $\sim 130{,}000$ quadratic residuals). A
+standard move is to batch them by a random linear combination:
 
-- Let the verifier (or a Fiat–Shamir hash) sample $n(n+1)/2$ challenges
+- Let the verifier (or a Fiat–Shamir hash) sample $N := n(n+1)/2$ scalars
   $c_{i,k}$ over a suitably large extension field.
-- Prove the single aggregated equation
-  $\sum_{i \le k} c_{i,k} \, f_{i,k}(x) = 0$.
+- Prove the single aggregated identity
+  $g(x) := \sum_{i \le k} c_{i,k} \, f_{i,k}(x) = 0$.
 
-By Schwartz–Zippel, this is sound whp as long as the challenge domain is
-large enough (soundness error $\le 1/|\mathbb{F}|$). The aggregated
-equation is still a quadratic form in the $x_{ij}$, hence still a *single*
-R1CS-style quadratic constraint in the $x_{ij}$, albeit a dense one.
+By Schwartz–Zippel, if any $f_{i,k}(x^*) \ne 0$ then $g(x^*) = 0$ with
+probability at most $1/|\mathbb{F}|$, so the aggregated check is as sound
+as checking all $N$ residuals individually (soundness error $\approx
+2^{-128}$ over a 128-bit extension field).
 
-Whether this aggregation is actually a win depends on the target proof
-system: systems whose prover cost is dominated by the number of non-zero
-entries (Aurora, Ligero) may prefer the structured sparse version of
-$n(n+1)/2$ constraints over a single dense one; systems with per-constraint
-overheads (some Plonkish variants) may prefer the aggregated form. A
-careful write-up should benchmark both.
+It is tempting to then say "and now we only have one constraint," but this
+is wrong in general. Whether aggregation actually pays off depends
+entirely on what the target proof system charges per.
+
+### Not a win: R1CS-QAP SNARKs (Groth16, Marlin, Plonk-without-sum-check)
+
+R1CS counts **rank-1 quadratic** constraints
+$\langle a, z\rangle \cdot \langle b, z\rangle = \langle c, z\rangle$. The
+aggregated $g(x)$ is a general quadratic form in the entries of $U$,
+which in general has rank $\Theta(N)$. Writing a rank-$r$ quadratic form
+in R1CS needs $r$ constraints, so aggregation just trades $N$ *sparse*
+rank-1 constraints for $\Theta(N)$ *dense* ones; often a wash, sometimes
+a loss. In the QAP-based prover (Groth16 & co.), cost is dominated by
+the number of non-zero R1CS entries and by one or two MSMs, and the
+proof size is already constant, so there is nothing for the trick to
+shrink. For these systems the natural description is the
+$n(n+1)/2$-constraint one, period.
+
+### A real win: sum-check-based SNARKs (Spartan, HyperPlonk, Jolt)
+
+Sum-check SNARKs charge per **polynomial identity the verifier reduces
+via sum-check**, not per scalar constraint. The sum-check protocol
+(Lund–Fortnow–Karloff–Nisan) is an interactive proof for a claim of the
+form
+$$
+S = \sum_{b \in \{0,1\}^\mu} p(b_1, \ldots, b_\mu),
+$$
+with cost $O(\mu \cdot d)$ rounds, $O(2^\mu \cdot d)$ prover field ops,
+and $O(\mu \cdot d)$ verifier ops, where $d$ is the individual degree of
+$p$. *One* sum-check instance can certify *one* polynomial identity,
+regardless of how many scalar equations that identity packages.
+
+For LIP, index the residuals by $(i, k)$ with $i \le k$, and let
+$\nu := \lceil \log_2 N \rceil$. Identify $(i, k)$ with a bit-string
+$b \in \{0,1\}^\nu$ and build the multilinear extension
+$$
+\widetilde F(b, x) \;=\; \text{multilinear interpolation of }
+\bigl(f_{i,k}(x)\bigr)_{(i,k)} \text{ in the first argument}.
+$$
+"$U$ is a LIP witness" is now equivalent to "$\widetilde F(b, x) = 0$
+for every $b \in \{0,1\}^\nu$." Apply the standard Spartan reduction:
+
+1. Verifier picks random $\tau \in \mathbb{F}^\nu$.
+2. Prover and verifier run sum-check on
+   $$
+   \sum_{b \in \{0,1\}^\nu} \widetilde{\mathrm{eq}}(\tau, b) \cdot
+   \widetilde F(b, x) \;=\; 0,
+   $$
+   where $\widetilde{\mathrm{eq}}(\tau, \cdot)$ is the multilinear
+   extension of the indicator $[b = \tau]$.
+3. Soundness of step 2 reduces "residuals vanish on the cube" to
+   "$\widetilde F(\tau, x) = 0$," again by Schwartz–Zippel.
+
+The informal "sample challenges $c_{i,k}$ and prove
+$\sum c_{i,k} f_{i,k} = 0$" is exactly this sum-check in disguise: the
+$c_{i,k}$ are the values $\widetilde{\mathrm{eq}}(\tau, b)$ on the
+Boolean cube.
+
+**What aggregation buys here, concretely.** Without it, a naive "one
+sum-check per residual" would run $N = n(n+1)/2$ sum-checks, each of
+size $O(n^2)$; total prover work $\Theta(N \cdot n^2) = \Theta(n^4)$,
+proof size $\Theta(N \log N)$. With aggregation you run one sum-check of
+size $O(n^2)$; prover work $\Theta(n^2)$, proof size $\Theta(\log N)$.
+That is a genuine $N$-fold reduction in prover work and a $\log N$-fold
+reduction in proof size, directly attributable to the packaging step.
+This is the setting where the LIP arithmetisation is most attractive.
+
+### A middle ground: Aurora / Ligero and batched low-degree tests
+
+FRI-based R1CS SNARKs like Aurora and Ligero commit to the witness via
+a Reed–Solomon encoding and run a batched low-degree test over the
+constraint-residual polynomials $A z \circ B z - C z$. The prover cost
+still scales with the number of non-zero R1CS entries (so the
+$n(n+1)/2$-constraint description is the right baseline for prover
+work), but proof size scales with the number of aggregated polynomial
+identities the verifier reduces, so aggregation shrinks proof size
+without helping prover time. This is a modest win in practice.
+
+### Summary table
+
+| Proof system                      | Per-unit cost                         | Aggregation wins? |
+|-----------------------------------|---------------------------------------|-------------------|
+| Groth16 / Marlin / Plonk (QAP)    | non-zero R1CS entries, MSM size       | no                |
+| Aurora / Ligero (FRI-over-R1CS)   | non-zeros (prover), identities (size) | proof size only   |
+| Spartan / HyperPlonk / Jolt       | polynomial identities per sum-check   | yes, $N \to 1$    |
+| Lattice SNARKs with batched opens | batched polynomial openings           | yes               |
+
+### Takeaway for a LIP write-up
+
+The aggregation step is not a "free constraint reduction." It is a
+soundness-amplification + batching trick whose concrete payoff is
+proof-system-specific. A careful write-up should:
+
+1. State the per-equation R1CS description as the arithmetisation
+   baseline (the one Groth16 and friends want).
+2. State the aggregated multilinear-extension description as the
+   sum-check SNARK description, and quote the $n^4 \to n^2$ prover and
+   $N \to \log N$ proof-size reductions it enables.
+3. Benchmark *both* on the target SNARK, since which description is
+   cheaper is determined by the SNARK's cost model, not by the
+   arithmetisation itself.
 
 ## What the project looks like
 
