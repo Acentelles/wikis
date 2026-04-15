@@ -1,6 +1,7 @@
 # Summary
 
 - [Introduction](./intro.md)
+- [Glossary](./glossary.md)
 - [Papers](./papers/papers.md)
     - [Malleable Commitments and ZK from Isogenies](./papers/malleable-commitments.md)
     - [Atkin/Weber Modular Polynomials in Isogeny PoKs](./papers/atkin-weber-modular-polynomials.md)
