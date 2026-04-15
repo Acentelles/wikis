@@ -1,7 +1,6 @@
 [book]
 authors = ["Alberto Centelles"]
 language = "en"
-multilingual = false
 src = "src"
 title = "Isogeny-Based Cryptography Notes"
 
