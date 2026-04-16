@@ -12,5 +12,6 @@
     - [Blind signatures from ABBA commutator commitments](./ideas/blind-signatures.md)
     - [mLIP ↔ abelian variety isogeny correspondence](./ideas/mlip-isogeny-correspondence.md)
     - [Zero-knowledge for Neo without Nova](./ideas/zk-neo-folding.md)
+    - [Isogeny-based SNARK as a succinct wrapper](./ideas/isogeny-snark-wrapper.md)
 - [Appendix](./appendix/appendix.md)
     - [Group Actions and KO-EGA](./appendix/group-actions.md)
