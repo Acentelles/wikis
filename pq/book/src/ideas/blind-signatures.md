@@ -205,6 +205,129 @@ coset-hiding argument of LNP22 §3 is ported to the quaternion setting
 $(\mathbf{a}, \mathrm{im} F_{\mathbf{a}})$ is near-uniform on
 $\Lambda_q^m \times T_0$, in place of the Micciancio-style argument).
 
+### Minimalist ComSIS-OTS (LM18-style restatement)
+
+A cleaner, "closest-to-LM18" restatement of the commutator one-time
+signature, keeping only the essentials; this is the form the
+co-authored draft notes use. The message $\mu$ is a ring element
+drawn from $\mathcal{O}_{K_q}$ (the commutative centre of the
+quaternion order $\Lambda_q$, so that $\mu$ commutes with everything
+in $\Lambda_q$).
+
+- **Setup** $(1^\lambda)$. Sample a public ComSIS vector
+  $\mathbf{c} \in \Lambda_q^m$.
+- **KeyGen** $(1^\lambda)$. Sample the secret key
+  $sk = (sk_1, sk_2) := (\mathbf{a}, \mathbf{b}) \in \Lambda_q^{2m}$
+  (from the short-element distribution used in ABBA). Publish
+  $$
+  pk \;=\; (pk_1, pk_2) \;:=\;
+  \bigl(F_{\mathbf{a}}(\mathbf{c}),\; F_{\mathbf{b}}(\mathbf{c})\bigr).
+  $$
+- **Sign** $(sk, \mu)$. Output $\rho := \mathbf{a}\mu + \mathbf{b}$.
+- **Verify** $(pk, \rho, \mu)$. Check
+  $F_{\rho}(\mathbf{c}) = pk_1 \, \mu + pk_2$.
+
+Correctness. Using that $\mu$ is central in $\Lambda_q$ (it commutes
+with every $c_i$),
+$$
+F_{\rho}(\mathbf{c})
+\;=\; F_{\mathbf{a}\mu + \mathbf{b}}(\mathbf{c})
+\;=\; F_{\mathbf{a}\mu}(\mathbf{c}) + F_{\mathbf{b}}(\mathbf{c})
+\;=\; F_{\mathbf{a}}(\mathbf{c})\,\mu + F_{\mathbf{b}}(\mathbf{c})
+\;=\; pk_1\,\mu + pk_2.
+$$
+
+Security sketch. Given a forgery $\rho' \ne \rho$ on the *same*
+message $\mu$ (i.e., a strong forgery),
+$$
+0 \;=\; F_{\rho}(\mathbf{c}) - F_{\rho'}(\mathbf{c})
+\;=\; F_{\rho - \rho'}(\mathbf{c})
+\;=\; -F_{\mathbf{c}}(\rho' - \rho)
+\;=\; F_{-\mathbf{c}}(\rho' - \rho)
+$$
+by bilinearity and antisymmetry of the commutator form, so
+$\rho' - \rho$ is a nonzero short element satisfying
+$F_{-\mathbf{c}}(\rho' - \rho) = 0$, i.e., a ComSIS solution for the
+public vector $-\mathbf{c}$ (equivalently $\mathbf{c}$, by sign
+symmetry of ComSIS).
+
+### Errors and gaps in the minimalist restatement
+
+Auditing the scheme above, I see the following issues worth
+addressing before using it in a security proof:
+
+1. **Verify omits a norm check on $\rho$.** ComSIS is hard only for
+   solutions of *bounded* norm. Without a norm bound in Verify,
+   an adversary could return a valid-but-huge $\rho'$ whose
+   difference $\rho' - \rho$ is large, and the reduction produces a
+   vector that is not a valid ComSIS instance. Verify should
+   additionally check $\|\rho\|_\infty \le B$ for a prescribed
+   bound $B$ compatible with the ComSIS hardness assumption and
+   the honest signing distribution. This is routine in LM18 and
+   LNP22 and needs to be stated explicitly here.
+
+2. **The reduction only covers strong forgery ($\mu' = \mu$).** The
+   derivation $0 = F_{\rho}(\mathbf{c}) - F_{\rho'}(\mathbf{c})$
+   implicitly uses
+   $F_{\rho}(\mathbf{c}) - F_{\rho'}(\mathbf{c})
+   = pk_1 \mu + pk_2 - (pk_1 \mu' + pk_2) = pk_1(\mu - \mu')$,
+   which is zero iff $\mu = \mu'$ (assuming $pk_1$ is not annihilated
+   by $\mu - \mu'$). For an **existential** forgery
+   $(\mu', \rho')$ with $\mu' \ne \mu$, the reduction needs the
+   standard Lyubashevsky-Micciancio entropy argument: the simulator
+   samples its own secret $\mathbf{a}$, computes the signing answer,
+   and uses that the forger's response is independent of
+   $\mathbf{a}$ conditioned on the public key (since multiple
+   $\mathbf{a}$s give the same $F_{\mathbf{a}}(\mathbf{c})$), so
+   $\rho - \rho' - \mathbf{a}(\mu - \mu')$ is a nontrivial short
+   element with noticeable probability, yielding a ComSIS solution.
+   The present sketch skips this step.
+
+3. **Centrality of $\mu$ is used without being stated.** The step
+   $F_{\mathbf{a}\mu}(\mathbf{c}) = F_{\mathbf{a}}(\mathbf{c}) \mu$
+   requires $\mu c_i = c_i \mu$ for all $i$, i.e., $\mu$ commutes
+   with the entries of $\mathbf{c}$. In ABBA this holds because
+   messages live in $\mathcal{O}_{K_q}$, the commutative centre of
+   $\Lambda_q$, but the write-up should say so explicitly; without
+   centrality, the correctness derivation fails at
+   $a_i \mu c_i \stackrel{?}{=} a_i c_i \mu$.
+
+4. **One-time-ness is not argued.** Two signatures on distinct
+   messages $\mu_1 \ne \mu_2$ give
+   $\rho_1 - \rho_2 = \mathbf{a}(\mu_1 - \mu_2)$; if $\mu_1 - \mu_2$
+   is invertible in $\mathcal{O}_{K_q}$ (the generic case for a
+   well-chosen message space), the attacker recovers $\mathbf{a}$
+   directly, and then $\mathbf{b} = \rho_1 - \mathbf{a}\mu_1$.
+   So the scheme is strictly one-time. The $C$-set of allowable
+   messages must therefore be structured so that differences are
+   invertible (ABBA-style "ball of short elements with invertible
+   differences"), and a single-signature assumption must be part of
+   the security statement.
+
+5. **Sampling distributions for $\mathbf{a}, \mathbf{b}$ are not
+   specified.** For $\rho$ to be short (and therefore a candidate
+   ComSIS preimage if differenced with a forgery), both keys must
+   be drawn from a short distribution, typically a discrete
+   Gaussian $D_{\Lambda^m, \sigma}$ with appropriate parameters.
+   The statistical argument that $pk$ is near-uniform on
+   $\mathrm{im}(F)$ (ABBA Corollary 2) relies on this choice of
+   distribution.
+
+6. **Norm budget and the signature norm bound $B$.** With
+   $\mathbf{a}, \mathbf{b}$ short and $\mu$ from a short central
+   subset, the signature norm satisfies
+   $\|\rho\|_\infty \le C \cdot \|\mathbf{a}\|_\infty \cdot
+   \|\mu\|_\infty + \|\mathbf{b}\|_\infty$
+   for a modest expansion constant $C$ depending on the quaternion
+   basis. $B$ should be set at (or slightly above) this bound so
+   honest signatures pass, and so ComSIS for vectors of norm
+   $\le 2B$ governs forgery security.
+
+Modulo fixing these six points, the reduction goes through and the
+scheme is the ComSIS-based analogue of LM18, with $F$ (sum-of-
+commutators) taking the role of $\mathbf{A} \cdot (-)$ and
+$F_{\mathbf{a}}(\mathbf{c})$ taking the role of $\mathbf{A}\mathbf{a}$.
+
 ### cBlind: blind signature
 
 The LNP22 plumbing carries over with one change: the "target" space of
