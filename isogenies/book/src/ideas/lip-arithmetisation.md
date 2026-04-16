@@ -66,9 +66,107 @@ $x_{ij}$. Two easy symmetry remarks:
    $a, b, c$ are the structure-constant rows. No auxiliary witnesses or
    multiplication gates are needed to expand the equation.
 
-So LIP is about as arithmetisation-friendly a hard relation as you can hope
-for: it is *natively* quadratic, it has a clean block structure, and the
-number of constraints is $n(n+1)/2$ without any clever tricks.
+So the *Gram-form* part of LIP is about as arithmetisation-friendly a
+hard relation as you can hope for: it is natively quadratic, it has a
+clean block structure, and the number of constraints is $n(n+1)/2$
+without any clever tricks.
+
+But the Gram-form equations alone do **not** fully capture LIP. We
+also need to prove that $U$ is actually unimodular.
+
+## The missing constraint: $U$ must be unimodular
+
+The LIP relation asks for $U \in \mathrm{GL}_n(\mathbb{Z})$, i.e.,
+$\det(U) = \pm 1$. The quadratic system $U^\top Q_0 U = Q_1$ on its own
+does not force this inside a SNARK, for two reasons:
+
+1. **Invertibility is not implied mod $p$.** Over $\mathbb{Z}$, when
+   $Q_0$ and $Q_1$ are positive definite with equal determinant,
+   $U^\top Q_0 U = Q_1$ forces $\det(U)^2 = 1$, hence $\det(U) = \pm 1$,
+   and $U$ is unimodular. But the SNARK works over a prime field
+   $\mathbb{F}_p$ where the witness entries $x_{ij}$ are formal scalars.
+   A cheating prover can pick $U \in \mathbb{F}_p^{n \times n}$ whose
+   determinant over $\mathbb{Z}$ is an unrelated large integer that
+   merely happens to be $\equiv \pm 1 \pmod p$, and satisfies the
+   quadratic system modulo $p$ without corresponding to any genuine
+   unimodular integer witness.
+2. **Integer-lift is not implied either.** Even if the field equations
+   are satisfied, each $x_{ij} \in \mathbb{F}_p$ is just a field element
+   and need not lift to a bounded integer. LIP witnesses are integer
+   matrices with entries controlled by the short-basis norm; arbitrary
+   field elements are not valid witnesses.
+
+A complete arithmetisation therefore needs two additional pieces on
+top of the Gram-form system.
+
+### Piece 1: an auxiliary inverse witness $V$
+
+Commit to a second matrix $V = (y_{ij}) \in \mathbb{F}_p^{n \times n}$
+and enforce
+$$
+U V \;=\; I_n \qquad\Longleftrightarrow\qquad
+\sum_{k=1}^n x_{i,k}\, y_{k,j} \;=\; \delta_{i,j}
+\quad\text{for all } (i,j).
+$$
+This is another $n^2$ quadratic constraints in the combined witness
+$(U, V)$, one per entry of the product $U V - I_n$. Over a commutative
+ring, $UV = I$ implies $VU = I$, so we only need one side.
+
+Why this suffices (together with Piece 2): over $\mathbb{Z}$,
+$\det(U) \det(V) = \det(I) = 1$, so both determinants are units in
+$\mathbb{Z}$, i.e., $\pm 1$. So if we additionally know that $U$ and
+$V$ are genuine integer matrices (Piece 2), we have proved $U$ is
+unimodular and $V = U^{-1}$ is its integer inverse.
+
+### Piece 2: range checks on $U$ and $V$
+
+Bound each entry: $|x_{ij}|, |y_{ij}| \le B$ for some prescribed
+$B \in \mathbb{Z}$. Any standard range-check gadget works:
+
+- **Bit decomposition** (generic, R1CS-friendly): commit to the
+  $\log_2(2B + 1)$ bits of each entry; costs $O(n^2 \log B)$
+  constraints total across both matrices.
+- **Lookup arguments** (Lasso, Plookup, cq): check each entry against
+  a precomputed table $[-B, B]$; costs are amortised and typically
+  much cheaper than bit decomposition for large $B$.
+
+Concretely, $B$ must be large enough to accommodate:
+
+- Entries of $U$, bounded by the short-basis norm that defines the
+  HAWK-style instance (tens of bits for typical parameters).
+- Entries of $V = U^{-1}$, bounded by the signed cofactors of $U$,
+  which are degree-$(n-1)$ polynomials in $U$'s entries. For short
+  unimodular $U$ these stay polynomially bounded but can be
+  noticeably larger than $U$'s own entries; the tightness of the
+  bound matters for the cost of the range check.
+
+A careful write-up would pick $p$ and $B$ such that (i) no wrap-around
+can occur in the field equations, and (ii) no false witness exists:
+any $(U, V)$ satisfying the field equations with entries in $[-B, B]$
+necessarily satisfies the integer equations.
+
+### Constraint count with unimodularity
+
+| Block                           | Shape          | Count         |
+|---------------------------------|----------------|---------------|
+| Gram form $U^\top Q_0 U = Q_1$  | quadratic      | $n(n+1)/2$    |
+| Inverse $U V = I_n$             | quadratic      | $n^2$         |
+| Range checks on $U, V$          | linear + lookup| $O(n^2 \log B)$ bits, amortisable |
+
+Total quadratic constraints: $\tfrac{3}{2} n^2 + O(n)$. The headline
+"LIP is a clean quadratic system" is preserved; we just enforce two
+quadratic systems instead of one, and add range checks to bridge the
+field-vs-integer gap.
+
+### Sanity check via determinants
+
+If you want a belt-and-braces check, you can additionally have the
+prover commit to $d := \det(U) \in \{-1, +1\}$ and arithmetise the
+Leibniz formula as an extra constraint. This is expensive (degree $n$
+in the entries) and redundant given the auxiliary-inverse approach
+above, so it is not recommended; mentioning it only to note that the
+auxiliary-inverse trick is the cheap alternative to doing this the
+obvious way.
 
 ## Aggregating the residuals: when it helps, when it does not
 
@@ -207,11 +305,18 @@ Concretely, to turn this observation into a short paper:
    framework from ePrint 2026/193 is a good model for how to present the
    numbers; an LIP-flavoured version of it would make follow-up
    comparisons easy.
-4. **Integer vs field subtleties.** LIP lives over $\mathbb{Z}$, but
-   R1CS lives over a prime field $\mathbb{F}_p$. The write-up needs to
-   argue that working mod a sufficiently large prime (or a few primes via
-   CRT) does not introduce false witnesses, using standard bounds on the
-   entries of $U$ for the regime of interest.
+4. **Integer vs field subtleties and unimodularity.** LIP lives over
+   $\mathbb{Z}$, but R1CS lives over a prime field $\mathbb{F}_p$. The
+   write-up must:
+   - Argue that working mod a sufficiently large prime $p$ (or a few
+     primes via CRT) does not introduce false witnesses.
+   - Enforce unimodularity of $U$ via the auxiliary-inverse matrix
+     $V$ with $UV = I_n$ and range checks on both $U$ and $V$, as
+     described in the "missing constraint" section above. Without
+     this, the arithmetisation admits witnesses that satisfy the
+     Gram-form equations mod $p$ without being valid LIP solutions.
+   - Pick the range bound $B$ for $V = U^{-1}$'s entries carefully;
+     it can be materially larger than the bound on $U$'s entries.
 5. **Zero-knowledge of $U$.** LIP is a search problem whose secret is
    $U$ itself, so the proof must be zero-knowledge for $U$ (not merely
    argument-of-knowledge). This comes for free from any ZK-R1CS SNARK
