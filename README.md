@@ -5,13 +5,13 @@ and published to GitHub Pages.
 
 Published books:
 
-- `isogenies/` , Isogeny-Based Cryptography Notes
+- `pq/` , Post-Quantum Cryptography Notes (isogeny- and lattice-based)
 
 ## Local build
 
 ```sh
 cargo install mdbook mdbook-katex
-mdbook serve isogenies/book
+mdbook serve pq/book
 ```
 
 ## Deploy

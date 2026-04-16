@@ -2,6 +2,6 @@
 authors = ["Alberto Centelles"]
 language = "en"
 src = "src"
-title = "Isogeny-Based Cryptography Notes"
+title = "Post-Quantum Cryptography Notes"
 
 [preprocessor.katex]

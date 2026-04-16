@@ -11,3 +11,6 @@ pursuing," not as claims about what has been proved or implemented.
 | Idea | Notes |
 |------|-------|
 | Arithmetising LIP as R1CS | [link](./lip-arithmetisation.md) |
+| Blind signatures from ABBA commutator commitments | [link](./blind-signatures.md) |
+| mLIP ↔ abelian variety isogeny correspondence | [link](./mlip-isogeny-correspondence.md) |
+| Zero-knowledge for Neo without Nova | [link](./zk-neo-folding.md) |

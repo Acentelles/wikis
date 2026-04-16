@@ -94,9 +94,50 @@ groups, the commitments sit in a set acted upon by those groups, and the
 malleability is exactly the action.** Notice that the commitment space itself
 is *not* a group — that's the entire point.
 
-A nice closure property: AGAMCs are closed under direct product, and one can
-extend $M$ and $R$ to vector or matrix spaces. This is what later lets the
-construction handle linear maps and matrix branching programs.
+### Closure under direct product, and the lift to vectors and matrices
+
+Two separate observations, both from §4.1 plus Remark 5 of the paper, combine
+into the structural hinge that everything later depends on.
+
+**Closure under direct product (Proposition 1).** Given two AGAMCs
+$\Pi_1, \Pi_2$ with parameters $(M_i, R_i, C_i, X_i, \star_i)$, define the
+product AGAMC componentwise:
+$$
+M = M_1 \times M_2, \quad R = R_1 \times R_2, \quad C = C_1 \times C_2,
+\quad X = (X_1, X_2),
+$$
+with action
+$((m_1, m_2), (r_1, r_2)) \star X = ((m_1, r_1) \star_1 X_1,\; (m_2, r_2) \star_2 X_2)$.
+Regularity, unique encoding, efficient sampling / membership, hiding (via a
+standard hybrid) and binding (componentwise) all transfer. So AGAMCs are
+literally closed under $\times$.
+
+**Lift to vectors and matrices (Remark 5).** Iterating the product $n$ times
+gives an AGAMC with message and randomness spaces $M^n$ and $R^n$; iterating
+in both directions gives $M^{m \times n}$ and $R^{m \times n}$. Malleability
+stays componentwise: adding a message-matrix to an open commitment shifts
+each entry independently.
+
+**Why it matters downstream.**
+
+- *Linear maps / R1CS (§6.2).* An R1CS witness is a vector $z = (1, v, w) \in \mathbb{F}^{n+1}$.
+  Committing to $z$ entry-by-entry uses the $M^{n+1}$ lift. Linear images
+  $Az, Bz, Cz$ are then commitable under the same AGAMC, and linearity lets
+  the verifier check the rowcheck relation $(Az) \circ (Bz) = Cz$ by
+  exploiting homomorphism on each of the four commitment vectors.
+- *Matrix branching programs (§6.3).* A width-$w$ branching program is a
+  sequence of $w \times w$ matrices over $\mathbb{Z}_N$ whose product
+  encodes the circuit evaluation. Lifting the message space to
+  $M^{w \times w}$ lets the commitment carry these matrices as single
+  objects, and the malleability operation (now "add a matrix-valued
+  message") is exactly what is needed to prove in zero-knowledge that the
+  next matrix in the chain was applied correctly.
+
+In short, closure under $\times$ is a one-line observation, but it is the
+hinge that turns a *scalar* AGAMC (which only commits to a single group
+element) into a commitment for the *linear-algebraic* objects that R1CS and
+branching programs are made of, without redesigning the commitment scheme
+at each step.
 
 ## Construction from a KO-EGA
 
@@ -202,10 +243,76 @@ the adversary actually answers.
 
 ## Proof systems for NP statements
 
-Three flavours of NP statement are handled. The trade-off in each is whether
-the underlying ring can be embedded into a *subgroup* of $M$ (in which case
-Protocol B applies) or only into an arbitrary subset (Protocol A, with the
-$|M'|$ restriction).
+### What is being proved, and why three flavours
+
+An NP relation $R$ is a set of pairs $(x, w)$ where $x$ is public, $w$ is a
+witness, and $(x, w) \in R$ can be checked in polynomial time. A proof
+system for NP lets the prover convince the verifier of the statement "I
+know some $w$ with $(x, w) \in R$" **without revealing $w$**
+(zero-knowledge). The goal of this section is to build such a proof system
+for *any* NP relation, using only the AGAMC primitive from §4 and the two
+sigma protocols from §5.
+
+NP is a single complexity class, but it has many equivalent canonical
+encodings, and the encoding determines what an AGAMC can prove cheaply.
+The paper handles three of them:
+
+1. **Arithmetic circuits** over a ring $F$, where each gate is a $+$ or
+   $\times$ in $F$ and the witness is the vector of wire values. Gate-by-
+   gate proofs.
+2. **R1CS** (Rank-1 Constraint Systems): fuse all gates into matrices
+   $A, B, C$ and prove $(Az) \circ (Bz) = Cz$ for $z = (1, v, w)$. One
+   linear-part proof ("rowcheck") plus one Hadamard-part proof
+   ("lincheck").
+3. **Matrix branching programs**: a chain of matrix multiplications whose
+   final product encodes acceptance. By Barrington's theorem, any depth-$d$
+   fan-in-2 circuit compiles to a width-$5$ branching program of length
+   $\leq 4^d$.
+
+### The Protocol A / Protocol B lever
+
+The tension running through all three constructions comes from the two
+sigma protocols of §5. Both prove "I know an opening of $c$ to some
+message in a set $M' \subseteq M$":
+
+- **Protocol B** works when $M'$ is a *subgroup* of $M$. Cheap: constant
+  number of malleability operations, proof size independent of $|M'|$.
+- **Protocol A** works when $M'$ is an arbitrary subset. Expensive:
+  prover cost scales with $|M'|$, which forces $|M'|$ (and hence the
+  underlying ring) to stay polynomially small.
+
+Whether each of the three encodings hits Protocol A or Protocol B is
+exactly what decides whether the underlying ring has to be small:
+
+- *Circuits.* Addition gate $\{(a, b, a+b)\}$ is a subgroup of $M^3$ → B,
+  cheap. Multiplication gate $\{(a, b, ab)\}$ is *not* a subgroup → A,
+  $|F|$ must be small.
+- *R1CS.* Rowcheck $\{(m, Am, Bm, Cm)\}$ is a subgroup (linear in $m$) →
+  B, cheap. Lincheck $y_A \circ y_B = y_C$ is not → A, $|F|$ still small.
+- *Branching programs.* The step relation $M_{j+1} = A_{j, b} M_j$ is
+  *affine* in the committed matrices once $b$ is fixed, and affine
+  relations are subgroups → B, no ring-size restriction. The paper's
+  Fig. 4 protocol hides the bit $b$ without the exponential blow-up that a
+  naive OR-proof would incur.
+
+### What the section is saying as a whole
+
+Isogeny group actions do not offer the pairing- or discrete-log-style
+structure needed for polynomial-based SNARKs. So the paper accepts the
+constraint and asks what slice of NP an AGAMC can prove using only
+malleability. The answer is a hierarchy:
+
+- Circuits: OK, but $|F|$ polynomial.
+- R1CS: OK, but $|F|$ polynomial.
+- Branching programs: **no ring-size restriction**, linear in depth $d$,
+  at the cost of going through Barrington.
+
+The branching-program construction is therefore the headline NP proof: it
+shows that isogeny-based AGAMCs are strong enough to prove *any* circuit,
+with only polynomial overhead in depth, independent of the field. The first
+two constructions are included partly for completeness and partly because
+for shallow circuits over tiny rings they are more efficient than going via
+Barrington.
 
 ### Arithmetic circuits over a small ring
 

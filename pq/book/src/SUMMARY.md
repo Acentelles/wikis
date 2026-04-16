@@ -9,5 +9,8 @@
     - [Hachi](./papers/hachi.md)
 - [Ideas and proposals](./ideas/ideas.md)
     - [Arithmetising LIP as R1CS](./ideas/lip-arithmetisation.md)
+    - [Blind signatures from ABBA commutator commitments](./ideas/blind-signatures.md)
+    - [mLIP ↔ abelian variety isogeny correspondence](./ideas/mlip-isogeny-correspondence.md)
+    - [Zero-knowledge for Neo without Nova](./ideas/zk-neo-folding.md)
 - [Appendix](./appendix/appendix.md)
     - [Group Actions and KO-EGA](./appendix/group-actions.md)

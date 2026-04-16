@@ -32,7 +32,7 @@ jobs:
           set -euxo pipefail
           mkdir -p site
           cp landing/index.html site/index.html
-          mdbook build isogenies/book -d "$GITHUB_WORKSPACE/site/isogenies"
+          mdbook build pq/book -d "$GITHUB_WORKSPACE/site/pq"
 
       - uses: actions/configure-pages@v5
 
