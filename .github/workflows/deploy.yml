@@ -33,6 +33,7 @@ jobs:
           mkdir -p site
           cp landing/index.html site/index.html
           mdbook build pq/book -d "$GITHUB_WORKSPACE/site/pq"
+          mdbook build jolt-atlas/book -d "$GITHUB_WORKSPACE/site/jolt-atlas"
 
       - uses: actions/configure-pages@v5
 
