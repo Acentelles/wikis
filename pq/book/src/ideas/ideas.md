@@ -14,5 +14,4 @@ pursuing," not as claims about what has been proved or implemented.
 | Blind signatures from ABBA commutator commitments | [link](./blind-signatures.md) |
 | mLIP ↔ abelian variety isogeny correspondence | [link](./mlip-isogeny-correspondence.md) |
 | Zero-knowledge for Neo without Nova | [link](./zk-neo-folding.md) |
-| Isogeny-based SNARK as a succinct wrapper | [link](./isogeny-snark-wrapper.md) |
-| Isogeny Wrapper SNARK from an Isogeny PCS | [link](./isogeny-wrapper.md) |
+| Isogeny-based SNARKs as wrappers | [link](./isogeny-wrapper-snark.md) |
