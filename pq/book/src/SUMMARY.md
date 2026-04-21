@@ -8,6 +8,7 @@
     - [Spartan](./papers/spartan.md)
     - [Hachi](./papers/hachi.md)
     - [ABBA: Lattice-based Commitments from Commutators](./papers/abba.md)
+    - [LNP22: Lattice Blind Signatures via Gaussian OTS](./papers/lnp22-blind-signatures.md)
 - [Ideas and proposals](./ideas/ideas.md)
     - [Arithmetising LIP as R1CS](./ideas/lip-arithmetisation.md)
     - [Blind signatures from ABBA commutator commitments](./ideas/blind-signatures.md)
@@ -16,3 +17,4 @@
     - [Isogeny-based SNARKs as wrappers](./ideas/isogeny-wrapper-snark.md)
 - [Appendix](./appendix/appendix.md)
     - [Group Actions and KO-EGA](./appendix/group-actions.md)
+    - [Fields and Cyclotomic Rings](./appendix/fields-and-cyclotomics.md)

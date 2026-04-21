@@ -84,6 +84,101 @@ This is why the Ruckert (2010) and the follow-up [ABB20] schemes had
 buggy proofs, and why [HKLN20] has to cap the number of signatures per key
 to O(polylog).
 
+#### The ROS barrier
+
+The single result that shaped the whole post-quantum blind-signature
+design space is [BLL+21]: the ROS problem underlying all Schnorr-style
+blind signatures is polynomial-time solvable once the number of
+concurrent sessions exceeds $\log q$. This closed the most natural
+template (randomised $\Sigma$-protocols) in the high-concurrency
+regime and forced the field toward qualitatively different
+constructions.
+
+**The Schnorr blind template.** A Schnorr signature proves knowledge
+of a secret $x$ with public key $X = g^x$ via a $\Sigma$-protocol:
+commit $R = g^r$, challenge $c$, response $s = r + cx$. The *blind*
+version lets the user inject random shifts into the commitment and
+the challenge so the signer sees a different $(R', c')$ from the one
+the user eventually outputs, and the transcripts are unlinkable. Via
+forking, one-more unforgeability reduces to a combinatorial problem
+called **ROS** (Random inhomogeneities in an Overdetermined Solvable
+system).
+
+**The ROS problem.** Given a random oracle $H$ and $\ell$ queries,
+find coefficients $\{\rho_{i,j}\}$ and a target vector such that the
+$\ell$ equations
+$$
+\sum_j \rho_{i,j}\, c_j \;=\; H\Big(\sum_j \rho_{i,j}\, R_j\Big)
+$$
+are simultaneously consistent over $\mathbb{Z}_q$. A solution lets an
+adversary take $\ell$ honest signing sessions and derive $\ell + 1$
+valid signatures, breaking one-more unforgeability by one.
+
+**The BLL+21 attack.** Benhamouda, Lepoint, Loss, Orru, Raykova
+showed that ROS is solvable in *polynomial time* once
+$\ell \geq \log_2 q$. The attack is a Wagner-style generalised-
+birthday approach: with $\log q$ free equations the attacker has
+enough degrees of freedom to collapse the hash inversions into a
+linear system. For a $128$-bit modulus, $128$ concurrent sessions is
+enough to forge.
+
+**Why this is structural, not a parameter issue.** Every blind
+signature whose OMUF reduction passes through a randomised
+$\Sigma$-protocol, that is, the "Schnorr template" in the sense of
+[HKL19], inherits the attack. The break is not about small
+parameters; it is about the shape of the reduction, and the only
+way to keep it safe is to keep $\ell$ below $\log q$.
+
+**The two escape hatches the field took.**
+
+1. **Cap concurrency.** [HKLN20] caps sessions at
+   $O(\operatorname{polylog}(\lambda))$, safely below $\log q$.
+   Preserves the Schnorr template; limits throughput per key.
+2. **Abandon the template.** [LNP22] (encrypt-then-sign-
+   homomorphically) and [AKSY22]/[BLNS23] (NIZK-of-a-signature)
+   replace the randomised $\Sigma$-protocol with constructions
+   whose OMUF reduction does not go through ROS at all. These are
+   the two templates described next.
+
+The same dichotomy appears in the isogeny/group-action world:
+[CSI-Otter] stays in the Schnorr template using twist trickery and
+is polylog-concurrent; [Tanuki] reaches polynomial concurrency under
+strengthened group-action assumptions by modifying the template.
+The cBlind construction sketched below belongs squarely in family
+(2): it follows [LNP22], which is why ROS never appears in its
+security statement.
+
+#### So is the Schnorr template secure?
+
+Conditionally yes, but only if you cap concurrency. The Schnorr
+template is secure up to $\ell = O(\log q)$ concurrently open
+signing sessions. Below that threshold, BLL+21 does not apply and
+the usual forking-based OMUF proof goes through. Above it, ROS
+becomes polynomial-time solvable and the scheme is broken.
+
+In practice this forces two choices:
+
+1. **Cap signatures per key** at $O(\operatorname{polylog}(\lambda))$,
+   as [HKLN20] does. Once the counter hits the cap, rotate keys.
+   Security holds, but per-key throughput is tiny compared to a
+   classical Schnorr signature (which has no such cap because
+   DL-Schnorr is not blind and ROS does not apply to it).
+2. **Accept that the template is unsuitable for high-concurrency
+   deployments.** Privacy Pass, e-cash at scale, anonymous
+   credentials with large user bases routinely open far more than
+   $\log q$ sessions. For those, the Schnorr template is not an
+   option and one must move to [LNP22] / [BLNS23] / [Tanuki].
+
+The sentence "HKLN20 by necessity caps at $O(\operatorname{polylog}(\lambda))$"
+is precisely calibrated: the cap is not a performance choice, it
+is a security requirement. Without it, the scheme breaks.
+
+Mental model: classical Schnorr signatures (non-blind) are fine at
+any concurrency because the attacker cannot control challenges.
+The moment you blind, the user controls the effective challenge the
+signer answers, and that is what opens the ROS attack surface. ROS
+is a cost of blindness, not of Schnorr.
+
 ### 2. Encrypt-then-sign-homomorphically (the "LNP22" template)
 
 Introduced by [LNP22] and the basis for the ABBA open question. The idea

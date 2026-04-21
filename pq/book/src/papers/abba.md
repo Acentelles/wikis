@@ -63,12 +63,56 @@ and $n^+ = [K^+:\mathbb{Q}] = D_K/2$.
 | $\Lambda_q = \mathcal{O}_K \oplus u \mathcal{O}_K$ | $2 D_K$ |
 | $T_0$ (traceless subspace) | $3 n^+ = \tfrac{3}{2} D_K$ |
 
-The paper's 25% claim compares $T_0$ to $\Lambda$:
-$\dim(T_0) / \dim(\Lambda) = \frac{3n^+}{4n^+} = 3/4$.
+### How $\varphi$ and $\theta$ determine every dimension
 
-For this to also be a reduction compared to Ajtai (which uses $O_L$, not
-$\Lambda$), we need $\dim(O_L) = \dim(\Lambda)$, i.e.
-$D_L = 2 D_K$.
+The totient $\varphi$ and the automorphism $\theta$ are two aspects of
+the same Galois structure. $\varphi$ counts the total degrees of freedom;
+$\theta$ determines how they split between "real" and "imaginary" parts.
+
+**$\varphi(n)$ defines the Galois group.** The Galois group
+$\text{Gal}(\mathbb{Q}(\zeta_n)/\mathbb{Q}) \cong (\mathbb{Z}/n\mathbb{Z})^\times$
+has order $\varphi(n)$. Each $a \in (\mathbb{Z}/n\mathbb{Z})^\times$
+acts as $\sigma_a : \zeta_n \mapsto \zeta_n^a$.
+
+**$\theta$ is one element of this group.** Complex conjugation is
+$\sigma_{n-1} : \zeta_n \mapsto \zeta_n^{-1}$. It has order 2 and
+generates a subgroup $\{1, \theta\}$. Its fixed field is the maximal
+real subfield $K^+ = \mathbb{Q}(\zeta_n + \zeta_n^{-1})$ with
+$[K^+:\mathbb{Q}] = \varphi(n)/2$.
+
+**$\theta$ splits $\mathcal{O}_K$ into eigenspaces.** The ring
+$\mathcal{O}_K$ (dimension $D_K = \varphi(n)$ over $\mathbb{F}_q$)
+decomposes under $\theta$ into:
+
+- Fixed space $\{a : \theta(a) = a\} = \mathcal{O}_{K^+}$ (dimension
+  $D_K/2 = n^+$), where ABBA's folding scalars live.
+- Anti-fixed space $\{a : \theta(a) = -a\} = \ker(1+\theta)$ (dimension
+  $D_K/2 = n^+$), which forms the "$u^0$" part of $T_0$.
+
+**Together they give $T_0$.** The traceless subspace of the quaternion
+combines the anti-fixed eigenspace of $\theta$ (for the $a_0$ component)
+with the full $\mathcal{O}_K$ (for the $a_1$ component):
+
+$$
+\dim(T_0) = \underbrace{n^+}_{\ker(1+\theta)} +
+\underbrace{D_K}_{u\text{-part}} =
+\frac{D_K}{2} + D_K = \frac{3}{2} D_K
+$$
+
+And $\dim(\Lambda) = 2 D_K$, so:
+
+$$
+\frac{\dim(T_0)}{\dim(\Lambda)} = \frac{3 D_K / 2}{2 D_K} = \frac{3}{4}
+$$
+
+This is the 25% compression: $\varphi$ sets the denominator ($2D_K$)
+and $\theta$'s eigenspace splitting sets the numerator ($\frac{3}{2}D_K$).
+
+**The parity condition connects $\varphi$ and $\theta$ to $O_L$.**
+For the 25% to beat Ajtai (not just the full quaternion), we need
+$\dim(O_L) = \dim(\Lambda)$, i.e. $\varphi(2n) = 2\varphi(n)$. This
+holds iff $n$ is even (see
+[the parity obstruction](#the-parity-obstruction) below).
 
 ### The theta automorphism
 
@@ -318,6 +362,196 @@ commitments (1,296 vs 864 Fq). The higher overhead (vs $\Phi_{128}$'s
 1.4$\times$) comes from the larger $D_K = 54$ and the unoptimized
 implementation (no precomputed theta).
 
+## Folding integration: the O_K challenge constraint
+
+### Why folding challenges must live in O_K
+
+Neo's RLC phase computes a folded commitment $c_{\text{acc}} = \sum \rho_i
+\cdot c_i$ and a folded witness $Z_{\text{acc}} = \sum \rho_i \cdot Z_i$,
+where the $\rho_i$ are Fiat-Shamir challenges sampled from a "strong set"
+$S \subset R_q$.
+
+For the folding to be sound, we need:
+
+$$
+\text{Com}(\textstyle\sum \rho_i \cdot Z_i) = \textstyle\sum \rho_i \cdot \text{Com}(Z_i)
+$$
+
+For **Ajtai**, this holds for any $\rho \in R_q$ because the commitment
+is $R_q$-homomorphic.
+
+For **ABBA**, Equation (1) of the paper restricts the scalar to
+$\alpha \in \mathcal{O}_{K,q}$ (the real subfield, fixed by $\theta$).
+A general $\rho \in R_q$ that is NOT fixed by $\theta$ breaks the
+identity: $\rho \cdot [A, (0, z)] \neq [A, (0, \rho \cdot z)]$ in general,
+because the commutator's internal $\theta$ applications do not commute
+with arbitrary $\rho$.
+
+Concretely, with $\rho \in R_q \setminus \mathcal{O}_K$:
+- The witness side computes $Z_{\text{acc}} = \sum \rho_i \cdot Z_i$
+  (ring multiplication in $R_q$, always valid).
+- The commitment side computes $\sum \rho_i \cdot C_i$ via `s_mul`, which
+  scales the $T_0$ element by $\rho_i$.
+- Recommitting $Z_{\text{acc}}$ gives a DIFFERENT result because the
+  commutator $[A, (0, \rho \cdot z)]$ is not the same as
+  $\rho \cdot [A, (0, z)]$ when $\rho$ does not commute with $\theta$.
+
+This manifests as a $\Pi_{\text{DEC}}$ verification failure: `c=false`.
+
+### The O_K projection fix
+
+The fix is to project each sampled challenge to $\mathcal{O}_K$ before
+it is used for both the witness folding and the commitment scaling.
+Given a sampled $\rho \in R_q$, the projection is:
+
+$$
+\rho_K = \rho + \theta(\rho) \;\in\; \mathcal{O}_K
+$$
+
+Since $\theta(\rho_K) = \theta(\rho) + \theta^2(\rho) = \theta(\rho) +
+\rho = \rho_K$, the projected element is indeed fixed by $\theta$.
+
+In the implementation (`neo-reductions/src/common.rs`, gated behind
+`#[cfg(feature = "abba")]`), this projection is applied inside
+`sample_rot_rhos_n` immediately after drawing the coefficients from the
+strong set, before building the rotation matrix. Both prover and
+verifier sample identically via Fiat-Shamir, so they agree on the
+projected $\rho_K$.
+
+### Soundness implications
+
+The projection halves the effective challenge set: $\mathcal{O}_K$ has
+$\mathbb{F}_q$-dimension $n^+ = D_K / 2$ (27 for $\Phi_{81}$, 16 for
+$\Phi_{128}$), compared to $D_K$ for the full $R_q$. This means:
+
+- **Challenge entropy drops by a factor of 2** per challenge.
+- The knowledge-soundness analysis from Neo (Section 4.3, Theorem 3)
+  assumes challenges from a set of size $|S|^{D}$; with the O_K
+  restriction the effective size is $|S|^{D_K/2}$.
+- For $|S| \geq 3$ (the typical strong-set alphabet) and $D_K = 32$
+  ($\Phi_{128}$), this gives $3^{16} \approx 4.3 \times 10^7$ possible
+  challenges per round, still far above the $2^{-\lambda}$ soundness
+  target for reasonable $\lambda$.
+
+The norm growth from the projection ($\|\rho_K\| \leq 2\|\rho\|$) also
+affects the DEC norm bound: the accumulated witness after $k$ RLC rounds
+grows by an extra factor of 2 per round compared to Ajtai, requiring a
+slightly larger $k_\rho$ (the decomposition depth). For the fibonacci
+tests this is absorbed by the existing $k_\rho$ margin.
+
+### End-to-end folding benchmarks ($\Phi_{81}$)
+
+The full Π_CCS → Π_RLC → Π_DEC pipeline with ABBA commitments is
+verified and benchmarked by the fibonacci integration test
+(`neo-fold-next/tests/fibonacci_abba.rs`, run with `--features abba`).
+Matching Ajtai metrics are in `fibonacci_ccs.rs`.
+
+| Config (steps $\times$ trans/chunk) | | Prove (ms) | | Verify (ms) | | Proof size (bytes) | |
+|---|---|---|---|---|---|---|---|
+| | Ajtai | ABBA | Ajtai | ABBA | Ajtai | ABBA | Size ratio |
+| 2 $\times$ 5 ($k_\rho = 12$) | 21.3 | 23.4 | 2.5 | 3.4 | 659,852 | 846,474 | 1.28$\times$ |
+| 5 $\times$ 5 ($k_\rho = 12$) | 35.7 | 50.7 | 6.9 | 12.0 | 1,649,588 | 2,116,143 | 1.28$\times$ |
+| 10 $\times$ 5 ($k_\rho = 12$) | 66.1 | 112.3 | 14.9 | 25.2 | 3,299,148 | 4,232,258 | 1.28$\times$ |
+| 5 $\times$ 10 ($k_\rho = 13$) | 39.9 | 62.1 | 9.6 | 13.2 | 2,078,148 | 2,579,263 | 1.24$\times$ |
+
+**Prove time**: 1.1-1.7$\times$ slower (overhead grows with step count,
+dominated by commitment operations in $\Pi_{\text{RLC}}$).
+
+**Verify time**: 1.4-1.7$\times$ slower (same cause: $T_0$ scaling via
+`s_mul` costs more than $R_q$ rotation).
+
+**Proof size**: consistently 1.24-1.28$\times$ larger on $\Phi_{81}$.
+
+#### Proof size breakdown
+
+Each Neo proof contains commitments (from $\Pi_{\text{CCS}}$,
+$\Pi_{\text{RLC}}$, $\Pi_{\text{DEC}}$) plus non-commitment data
+(sumcheck rounds, evaluation claims, CCS outputs). Each commitment
+costs $\kappa \times d_{\text{slot}} \times 8$ bytes (Goldilocks):
+
+| Scheme | $d_{\text{slot}}$ ($\Phi_{81}$) | $d_{\text{slot}}$ ($\Phi_{128}$) | Bytes/commit ($\Phi_{81}$) | Bytes/commit ($\Phi_{128}$) |
+|---|---|---|---|---|
+| Ajtai | $D = 54$ | $D_L = 64$ | 6,912 | 8,192 |
+| ABBA | $T_0 = 81$ | $T_0 = 48$ | 10,368 | **6,144** |
+
+On $\Phi_{81}$, ABBA commitments are 1.5$\times$ larger per slot (81 vs
+54). Commitment data accounts for ~93% of the proof size difference
+(measured diff matches predicted diff within 8%).
+
+On $\Phi_{128}$, ABBA commitments are **25% smaller** per slot (48 vs
+64), so the proof size flips:
+
+| Config | Ajtai $\Phi_{81}$ | Ajtai $\Phi_{128}$ | ABBA $\Phi_{128}$ | ABBA/Ajtai |
+|---|---|---|---|---|
+| 2$\times$5 ($k_\rho = 12$) | 660 KB | 724 KB | **621 KB** | **0.86$\times$** |
+| 5$\times$5 ($k_\rho = 12$) | 1,650 KB | 1,810 KB | **1,554 KB** | **0.86$\times$** |
+| 10$\times$5 ($k_\rho = 12$) | 3,299 KB | 3,619 KB | **3,107 KB** | **0.86$\times$** |
+| 5$\times$10 ($k_\rho = 13$) | 2,078 KB | 2,251 KB | **1,974 KB** | **0.88$\times$** |
+
+ABBA $\Phi_{128}$ proofs are **12-14% smaller** than Ajtai $\Phi_{128}$
+proofs (not the full 25% commitment reduction, because non-commitment
+data dilutes the saving).
+
+#### Per-commitment cost across fields and conductors
+
+| | $\Phi_{81}$ (bytes) | $\Phi_{128}$ (bytes) |
+|---|---|---|
+| Ajtai (Goldilocks) | 6,912 | 8,192 |
+| ABBA (Goldilocks) | 10,368 | **6,144** |
+| Ajtai (Baby Bear) | 3,456 | 4,096 |
+| ABBA (Baby Bear) | 5,184 | **3,072** |
+
+On Baby Bear (4 bytes/element instead of 8), all sizes halve.
+ABBA $\Phi_{128}$ on Baby Bear achieves the smallest commitment at
+**3,072 bytes**, a 55% reduction vs Goldilocks Ajtai $\Phi_{81}$
+(6,912 bytes) from the combined field + conductor + traceless savings.
+
+At the full-proof level, ABBA $\Phi_{128}$ on Baby Bear projects to
+~311 KB for a 2-step fold (vs 660 KB for Goldilocks Ajtai $\Phi_{81}$,
+a **53% reduction**).
+
+### Simulated folding performance for $\Phi_{128}$
+
+The full Neo folding pipeline cannot currently run on $\Phi_{128}$
+because `neo-math` is hardcoded for $\Phi_{81}$ ($D = 54$). However,
+`phi128_test.rs` includes a simulated folding benchmark that exercises
+the same operations as the real pipeline: commit all steps, then
+accumulate via $\rho \cdot c$ (s_mul) with O_K-projected challenges.
+
+| Config (steps $\times$ $m$, bits) | Ajtai | ABBA | Ratio | Commitment size |
+|---|---|---|---|---|
+| 2 $\times$ 16 (1,024 bits) | 2.42 ms | 2.58 ms | **1.06$\times$** | 768 vs 1,024 Fq (**25% smaller**) |
+| 5 $\times$ 16 (1,024 bits) | 4.97 ms | 6.31 ms | **1.27$\times$** | 768 vs 1,024 Fq (**25% smaller**) |
+| 10 $\times$ 16 (1,024 bits) | 10.00 ms | 13.14 ms | **1.31$\times$** | 768 vs 1,024 Fq (**25% smaller**) |
+| 5 $\times$ 32 (2,048 bits) | 9.53 ms | 13.11 ms | **1.38$\times$** | 768 vs 1,024 Fq (**25% smaller**) |
+
+ABBA's folding overhead at $\Phi_{128}$ is **1.06-1.38$\times$**
+(vs 1.1-1.7$\times$ on $\Phi_{81}$), while commitment size is
+**25% smaller** (vs 28% larger on $\Phi_{81}$). The improvement
+comes from $D_K = 32$ (vs 54): each field operation touches fewer
+elements, and the s_mul ring multiplication is cheaper.
+
+### Comparison: $\Phi_{81}$ vs $\Phi_{128}$
+
+| Metric | $\Phi_{81}$ (odd, obstructed) | $\Phi_{128}$ (even, clean) |
+|---|---|---|
+| Commitment (ABBA/Ajtai) | 1.28$\times$ larger | **0.75$\times$ (25% smaller)** |
+| Folding overhead | 1.1-1.7$\times$ | **1.06-1.38$\times$** |
+| Commit overhead (standalone) | 3.2-25$\times$ (unoptimized) | **1.4$\times$** |
+| PP size ratio | 2$\times$ | 2$\times$ |
+| The 25% claim | **fails** (parity) | **confirmed** |
+
+$\Phi_{128}$ is the right conductor for ABBA: the commitment is
+genuinely smaller, the overhead is moderate, and all algebraic
+properties hold. Porting would require:
+
+- `neo-math/src/ring.rs`: $D = 64$, rot_step for $X^{64} + 1$
+  (simpler: just negate on wrap)
+- `neo-math/src/quaternion.rs`: theta for $\Phi_{64}$, $D_K = 32$
+- `neo-params`: new Goldilocks preset for $\eta = 128$
+- `neo-ajtai`: update compile-time assertions from $D = 54$ to $D = 64$
+- SuperNeo bar transform re-derivation
+
 ## ComSIS: the hardness assumption
 
 The binding reduction relies on a quaternion-analogue of SIS:
@@ -374,3 +608,14 @@ dimension from 2048 to 1536 gives estimated bit-security of 288.2 and
    Lattice Estimator needs to be checked for $\kappa = 16$ at this
    dimension to confirm it still meets the target (NIST category III or
    above).
+
+5. **Tightening the O_K challenge analysis**: the current O_K projection
+   $\rho_K = \rho + \theta(\rho)$ doubles the norm and halves the
+   challenge entropy. A cleaner approach would sample directly from a
+   strong set inside $\mathcal{O}_K$ (i.e., sample $n^+$ coefficients
+   in the real-subfield basis and embed), avoiding the norm doubling.
+   This requires a dedicated `RotRing` configuration for O_K and a
+   re-derivation of the expansion factor $T$ from Neo's Theorem 3.
+   Whether the halved challenge space affects the concrete soundness
+   level for Nightstream's $\lambda = 127$ target needs explicit
+   computation.

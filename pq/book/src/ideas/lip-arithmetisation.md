@@ -2,7 +2,7 @@
 
 > A direct analogue of the isogeny-arithmetisation line (see
 > [Atkin/Weber](../papers/atkin-weber-modular-polynomials.md),
-> and the preceding [CLL23], [dHKM+25], [LP25])
+> and the preceding [CLL23], [dHKMS25], [LP25])
 > for the **Lattice Isomorphism Problem** (LIP).
 
 ## Motivation
@@ -15,7 +15,7 @@ AIR, …).
 
 The isogeny community has been busy doing exactly this: [CLL23] encoded
 $\ell^n$-isogeny walks in R1CS via classical modular polynomials; follow-up
-works (canonical modular polynomials [dHKM+25], Atkin and Weber modular
+works (canonical modular polynomials [dHKMS25], Atkin and Weber modular
 polynomials [ePrint 2026/193](https://eprint.iacr.org/2026/193), radical
 isogenies [LP25]) squeezed out better and better constraint counts.
 
@@ -157,6 +157,202 @@ Total quadratic constraints: $\tfrac{3}{2} n^2 + O(n)$. The headline
 "LIP is a clean quadratic system" is preserved; we just enforce two
 quadratic systems instead of one, and add range checks to bridge the
 field-vs-integer gap.
+
+### Dropping the inverse block: Gram plus lift already proves unimodularity
+
+The auxiliary-inverse trick above is the general-purpose answer to
+"how do I prove a matrix is invertible in R1CS": commit a candidate
+inverse $V$, enforce $U V = I_n$, pay $n^2$ quadratic constraints.
+That is essentially tight for a *generic* matrix, since the witness
+carries $n^2$ degrees of freedom and each constraint fixes $O(1)$ of
+them.
+
+For LIP specifically, we can do better. The Gram block already
+enforces $U^\top Q_0 U = Q_1$, and any well-posed LIP instance
+satisfies $\det(Q_0) = \det(Q_1) \ne 0$ as public scalars (equivalent
+lattices have equal Gram determinants; the verifier can check this
+once on the public inputs). Taking determinants of the Gram equation
+over $\mathbb{Z}$,
+$$
+\det(U)^2 \cdot \det(Q_0) \;=\; \det(Q_1)
+\;\;\Longrightarrow\;\;
+\det(U)^2 = 1
+\;\;\Longrightarrow\;\;
+\det(U) = \pm 1.
+$$
+Unimodularity falls out as a *consequence* of the Gram block. No
+inverse witness is required.
+
+The one thing this argument needs is that the $\mathbb{F}_p$ equation
+actually lifts to $\mathbb{Z}$. With $\|U\|_\infty \le B$ and
+$\|Q_0\|_\infty \le M$, every entry of $U^\top Q_0 U$ is bounded by
+$n B^2 M$, so picking $p > 2 n B^2 M$ makes the $\mathbb{F}_p$
+equation imply the $\mathbb{Z}$ equation coordinate-wise, and the
+determinant identity then holds over $\mathbb{Z}$. For HAWK-scale
+parameters ($n \approx 2^9$, $B \approx 2^{30}$, $M \approx 2^{30}$),
+the bound is $\approx 2^{99}$, comfortably below a BN254-scale prime.
+
+**Revised constraint count.**
+
+| Block                           | Shape           | Count         |
+|---------------------------------|-----------------|---------------|
+| Gram form $U^\top Q_0 U = Q_1$  | quadratic       | $n(n+1)/2$    |
+| Range check on $U$              | linear + lookup | $O(n^2 \log B)$ bits, amortisable |
+
+Total quadratic constraints: $\tfrac{1}{2} n^2 + O(n)$, a 3x
+reduction relative to the auxiliary-inverse arithmetisation. The
+lookup load also halves (range on $U$ only; no $V$). The subtlety
+is that the argument relies on a tight range bound on $U$ so the
+Gram equation lifts; if one uses a looser bound (or works modulo a
+smaller prime), the auxiliary-inverse arithmetisation remains the
+right fallback.
+
+This is specific to LIP: the Gram block is doing double duty as
+"equivalence of quadratic forms" and as "unimodularity certificate."
+Without the extra quadratic constraint the LIP setup gives us for
+free, $\Omega(n^2)$ constraints for invertibility is information-
+theoretically tight.
+
+**Caveat.** If a later part of the protocol wants $V = U^{-1}$ as a
+committed object (e.g., a zero-knowledge extractor that rewinds on
+$V$, or a sibling relation that references the inverse directly),
+committing $V$ anyway may be the right engineering choice even
+though the Gram-plus-lift argument makes it redundant for the
+soundness of unimodularity alone. Worth making this call explicit in
+the write-up rather than defaulting to one option.
+
+### Aside: structured-witness alternatives (and why Gram-plus-lift dominates)
+
+A natural meta-question: instead of witnessing the full inverse
+$V$, can we commit to a *structured* object that makes invertibility
+a local (row-by-row or piece-by-piece) check rather than a global
+determinant check? A few candidates worth naming, mostly because
+they are easy to misreach for:
+
+- **Reduced row echelon form (RREF).** The RREF of any invertible
+  $n \times n$ matrix is $I_n$, so constraining $U$ to be in RREF
+  collapses the witness set to the single matrix $I_n$ and changes
+  the relation. Not usable.
+- **Plain row echelon form / upper triangular.** Most unimodular
+  matrices are not upper triangular, so restricting to this
+  structure changes the relation rather than arithmetising it. Also
+  not usable.
+- **LU / PLU / Bruhat decomposition.** Commit $U = P L U'$ with $P$
+  a permutation (free $\det = \pm 1$), $L$ unit-lower-triangular
+  (free $\det = 1$), and $U'$ upper-triangular with diagonal entries
+  in $\{\pm 1\}$ (determinant checkable by inspecting $n$ diagonal
+  entries). Cost: $O(n^2)$ structure constraints (zero entries below
+  / above pivots, permutation one-hot rows) plus $O(n^2)$ quadratic
+  constraints to enforce $P L U' = U$. Same asymptotic cost as
+  $U V = I_n$, with worse constants.
+- **Word in elementary matrices.** Commit a sequence of elementary
+  row operations (swap / add integer multiple / $\pm 1$ scale)
+  realising $U$; each elementary has $\det = \pm 1$ by inspection,
+  so $\det(U) = \pm 1$ combinatorially. Cost: for a word of length
+  $k$, $\Theta(k)$ matrix multiplications. A generic unimodular
+  matrix requires $k = \Theta(n^2)$ elementary operations (Gaussian
+  elimination), giving $\Theta(n^4)$ constraints. Strictly worse.
+
+None of these beat $U V = I_n$ on a general matrix. The reason is
+the same information-theoretic argument as before: invertibility is
+a *global* property, and any certificate that is locally checkable
+still has to hold against the $n^2$ degrees of freedom in $U$,
+forcing $\Omega(n^2)$ constraints.
+
+**Why Gram-plus-lift dominates all of these for LIP.** The Gram
+block $U^\top Q_0 U = Q_1$ with $Q_0, Q_1$ invertible has a
+closed-form consequence: since
+$$
+U^\top Q_0 U = Q_1
+\;\;\Longrightarrow\;\;
+U^{-1} = Q_1^{-1} \, U^\top \, Q_0
+$$
+(multiply on the left by $Q_1^{-1}$ and on the right by $U^{-1}$,
+then transpose as needed), the inverse is not just witnessable; it
+is *computable from $U$ by a public linear map*. Invertibility mod
+$p$ follows by inspection of this formula, and unimodularity over
+$\mathbb{Z}$ follows from the determinant lift. We pay zero extra
+constraints; the Gram block is doing all the work.
+
+No structured-witness arithmetisation beats "zero constraints for
+invertibility." The lesson is that REF / LU / elementary-word
+approaches are the right reflex when you are certifying
+invertibility of a matrix *in isolation*, but LIP is not that
+setting: the hard relation itself already contains an invertibility
+certificate.
+
+### Aside: characteristic polynomial and eigenvalue approaches
+
+A different reflex is to commit spectral data about $U$ (eigenvalues
+or the characteristic polynomial) and reduce unimodularity to a
+check on that data. It is worth recording why this does not help,
+since the idea is natural enough to come up twice.
+
+**Committing eigenvalues directly does not type-check.** For a
+generic integer matrix, eigenvalues are algebraic numbers of degree
+up to $n$ over $\mathbb{Q}$, and over $\mathbb{F}_p$ they live in an
+extension $\mathbb{F}_{p^k}$ that depends on the matrix. Unimodular
+matrices have eigenvalues that are algebraic integers whose product
+is $\pm 1$, but the individual values are usually irrational:
+$\begin{pmatrix} 2 & 1 \\ 1 & 1 \end{pmatrix}$ has eigenvalues
+$(3 \pm \sqrt{5})/2$. So "commit the eigenvalues as field elements"
+is not a well-typed move unless the witness class is restricted to
+matrices with spectrum in $\mathbb{F}_p$ (finite-order, roots of
+unity, etc.), which changes the LIP relation.
+
+**Committing the characteristic polynomial does type-check, but is
+expensive.** The cleaner version is to commit
+$$
+\chi_U(x) \;=\; x^n + c_{n-1} x^{n-1} + \ldots + c_1 x + c_0,
+\qquad c_i \in \mathbb{F}_p,
+$$
+and verify Cayley-Hamilton: $\chi_U(U) = 0$. Unimodularity then
+reduces to $c_0 = \pm 1$, one scalar check. But evaluating
+$\chi_U(U)$ requires computing $U, U^2, \ldots, U^n$, i.e., $n - 1$
+matrix-matrix products, each costing $\Theta(n^2)$ quadratic
+constraints (with $\Theta(n^3)$ auxiliary witnesses for intermediate
+products). Total: $\Theta(n^3)$ quadratic constraints. Strictly
+worse than both $U V = I_n$ (at $n^2$) and Gram-plus-lift (at $0$).
+
+**The Cayley-Hamilton-derived inverse is also dominated.** Once
+$\chi_U$ is committed, one gets
+$$
+U^{-1} \;=\; -\frac{1}{c_0} \bigl( U^{n-1} + c_{n-1} U^{n-2} + \ldots + c_1 I \bigr),
+$$
+which is a polynomial expression for $U^{-1}$ of degree $n - 1$ in
+$U$. Evaluating it is again $\Theta(n^3)$. In the LIP setting we
+already have the *linear* closed form $U^{-1} = Q_1^{-1} U^\top Q_0$
+with public coefficients, so the Cayley-Hamilton route pays more to
+reach a weaker version of the same object.
+
+**When spectral checks do pay off.** Two niche regimes:
+
+- **Finite-order unimodular matrices** (orthogonal integer matrices,
+  torsion in $\mathrm{GL}_n(\mathbb{Z})$): eigenvalues are roots of
+  unity, conjugacy classes are finite, and $\chi_U$ has $O(1)$
+  possibilities per class. One can commit the class index, look up
+  $\chi_U$ from a small table, and verify $\chi_U(U) = 0$. Useful if
+  the LIP instance is constrained to torsion witnesses, e.g., for
+  specific lattice automorphism groups.
+- **Sanity-checking the public Gram matrices.** $Q_0$ and $Q_1$ are
+  symmetric positive-definite with eigenvalues that are real
+  algebraic integers; one can commit bounds on their spectra and
+  range-check. This is a check on the *instance*, not on the secret
+  witness $U$, and is orthogonal to the unimodularity question.
+
+Neither case applies to generic LIP witnesses.
+
+**Ranking summary.** Pecking order on invertibility arithmetisations
+for LIP:
+
+| Approach                                   | Quadratic constraints          | Notes                                  |
+|--------------------------------------------|--------------------------------|----------------------------------------|
+| Gram-plus-lift                             | $0$ extra                      | LIP-specific, needs tight range bound  |
+| Auxiliary inverse $UV = I_n$               | $n^2$                          | general-purpose baseline               |
+| LU / PLU / Bruhat decomposition            | $\Theta(n^2)$                  | same asymptotic, worse constants       |
+| Cayley-Hamilton on committed $\chi_U$      | $\Theta(n^3)$                  | dominated                              |
+| Leibniz determinant                        | $\Theta(n^3)$ via elimination  | strictly worse                         |
+| Eigenvalues committed directly             | does not type-check            | no-go for general $U$                  |
 
 ### Sanity check via determinants
 
@@ -310,13 +506,19 @@ Concretely, to turn this observation into a short paper:
    write-up must:
    - Argue that working mod a sufficiently large prime $p$ (or a few
      primes via CRT) does not introduce false witnesses.
-   - Enforce unimodularity of $U$ via the auxiliary-inverse matrix
-     $V$ with $UV = I_n$ and range checks on both $U$ and $V$, as
-     described in the "missing constraint" section above. Without
-     this, the arithmetisation admits witnesses that satisfy the
-     Gram-form equations mod $p$ without being valid LIP solutions.
-   - Pick the range bound $B$ for $V = U^{-1}$'s entries carefully;
-     it can be materially larger than the bound on $U$'s entries.
+   - Enforce unimodularity of $U$. Two options discussed above:
+     (a) auxiliary-inverse matrix $V$ with $UV = I_n$ and range
+     checks on both $U$ and $V$ ($\tfrac{3}{2} n^2$ quadratic,
+     general-purpose); (b) exploit the Gram block directly, relying
+     on $\det(Q_0) = \det(Q_1)$ and a tight range bound on $U$ to
+     lift the Gram equation to $\mathbb{Z}$, whence $\det(U)^2 = 1$
+     and the inverse block is redundant ($\tfrac{1}{2} n^2$
+     quadratic, LIP-specific).
+   - Pick the range bound $B$ accordingly. Under option (a), $B$ must
+     cover the cofactors of $U$ (entries of $V = U^{-1}$), which are
+     materially larger than $U$'s entries. Under option (b), $B$
+     must satisfy $n B^2 \|Q_0\|_\infty < p/2$ so the Gram equation
+     lifts from $\mathbb{F}_p$ to $\mathbb{Z}$.
 5. **Zero-knowledge of $U$.** LIP is a search problem whose secret is
    $U$ itself, so the proof must be zero-knowledge for $U$ (not merely
    argument-of-knowledge). This comes for free from any ZK-R1CS SNARK
@@ -337,14 +539,30 @@ construction) can be compared.
 
 ## Status
 
-Idea only, not yet written up. Prior art to cite at the very least:
+Idea only, not yet written up.
 
-- [CLL23] Cong, Lai, Levin, modular-polynomial R1CS for isogenies
-  (ACNS'23).
-- [dHKM+25] den Hollander, Kutas, Mula, Slamanig, Spindler, canonical
-  modular polynomials (CRYPTO'25).
-- [ePrint 2026/193](https://eprint.iacr.org/2026/193), Atkin / Weber
-  variants (PQCrypto'26); see
-  [this wiki's entry](../papers/atkin-weber-modular-polynomials.md).
-- HAWK and related LIP-based signatures, for the canonical source of
-  concrete $(Q_0, Q_1)$ instances.
+## References
+
+### Isogeny arithmetisation line (prior art)
+
+| Tag | Paper | ePrint | Raw |
+|-----|-------|--------|-----|
+| [CLL23] | Cong, Lai, Levin, *Efficient Isogeny Proofs Using Generic Techniques* (ACNS 2023) | [2023/037](https://eprint.iacr.org/2023/037) | `raw/isogenies/2023-037-efficient-isogeny-proofs-generic-techniques/` |
+| [dHKMS25] | den Hollander, Kleine, Mula, Slamanig, Spindler, *More Efficient Isogeny Proofs of Knowledge via Canonical Modular Polynomials* (CRYPTO 2025) | [2024/1738](https://eprint.iacr.org/2024/1738) | `raw/isogenies/2024-1738-efficient-isogeny-proofs-canonical-modular-polynomials/` |
+| [LP25] | Levin, Pedersen, *Faster Proofs and VRFs from Isogenies* (ASIACRYPT 2025) | [2024/1626](https://eprint.iacr.org/2024/1626) | `raw/isogenies/2024-1626-faster-proofs-vrfs-isogenies/` |
+| | den Hollander, Mula, Slamanig, Spindler, *On the Use of Atkin and Weber Modular Polynomials in Isogeny Proofs of Knowledge* (PQCrypto 2026) | [2026/193](https://eprint.iacr.org/2026/193) | `raw/isogenies/2026-193-atkin-weber-modular-polynomials-isogeny-pok/` |
+
+See also [this wiki's Atkin/Weber entry](../papers/atkin-weber-modular-polynomials.md).
+
+### LIP / Hawk
+
+- [DPPvW22] Ducas, Postlethwaite, Pulles, van Woerden, *Hawk: Module LIP
+  makes lattice signatures fast, compact and simple*,
+  ePrint [2022/1155](https://eprint.iacr.org/2022/1155).
+  HAWK and related LIP-based signatures provide the canonical source of
+  concrete $(Q_0, Q_1)$ instances for benchmarking.
+
+### Proof systems referenced
+
+- [Spartan](../papers/spartan.md) (Setty, CRYPTO 2020): sum-check-based
+  SNARK, the cost model used in the aggregation analysis above.

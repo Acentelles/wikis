@@ -190,7 +190,7 @@ Applications include:
 - A constructive IKO correspondence: realising a PPSAS as a Jacobian of a
   genus-2 curve.
 - Attack on CGL-style hash functions over PPSAS with untrusted setup
-  ([CD24] class).
+  ([CDS19] class).
 - The dim-2 analog of the constructive Deuring correspondence.
 
 ### Equivalent computational problems for PPSAS ([Mon26])
@@ -366,6 +366,7 @@ All papers stored with both PDF and `markitdown` conversion for search.
 | 2023 | Page, Wesolowski, *The Supersingular Endomorphism Ring and One Endomorphism Problems Are Equivalent* | [2023/1399](https://eprint.iacr.org/2023/1399) | `raw/isogenies/2023-1399-supersingular-endomorphism-ring-one-endo-equivalent/` |
 | 2025 | Castryck, Decru, Kutas, Laval, Petit, Ti, *KLPT$^2$: Algebraic Pathfinding in Dimension Two and Applications* (Crypto 2025) | [2025/372](https://eprint.iacr.org/2025/372) | `raw/isogenies/2025-372-klpt2-algebraic-pathfinding-dimension-two/` |
 | 2025 | Borin, Corte-Real Santos, Eriksen, Invernizzi, Mula, Schaeffler, Vercauteren, *Qlapoti: Simple and Efficient Translation of Quaternion Ideals to Isogenies* | [2025/1604](https://eprint.iacr.org/2025/1604) | `raw/isogenies/2025-1604-qlapoti-quaternion-ideals-to-isogenies/` |
+| 2019 | Castryck, Decru, Smith, *Hash Functions from Superspecial Genus-2 Curves Using Richelot Isogenies* | [2019/296](https://eprint.iacr.org/2019/296) | `raw/isogenies/2019-296-hash-functions-superspecial-genus2-richelot/` |
 | 2026 | Montessinos, *Equivalent Computational Problems for Superspecial Abelian Surfaces* | [2026/120](https://eprint.iacr.org/2026/120) | `raw/isogenies/2026-120-equivalent-problems-superspecial-abelian-surfaces/` |
 
 ### Background references (not in `raw/`, external)
@@ -446,6 +447,9 @@ focus:
   Abelian Surfaces*, ePrint [2026/120](https://eprint.iacr.org/2026/120).
 - [CD22] Castryck, Decru, *An Efficient Key Recovery Attack on SIDH*,
   ePrint [2022/975](https://eprint.iacr.org/2022/975), Eurocrypt 2023.
+- [CDS19] Castryck, Decru, Smith, *Hash Functions from Superspecial
+  Genus-2 Curves Using Richelot Isogenies*,
+  ePrint [2019/296](https://eprint.iacr.org/2019/296), J. Math. Cryptol. 2020.
 - [GPST16] Galbraith, Petit, Shani, Ti,
   ePrint [2016/859](https://eprint.iacr.org/2016/859).
 - [CLM+18] Castryck, Lange, Martindale, Panny, Renes, *CSIDH*,
