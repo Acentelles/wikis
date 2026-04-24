@@ -156,18 +156,73 @@ fundamental gap:
 
 ---
 
-## Complementary, not competing
+## PreFlight is not a competing middleware; it is the proof layer
 
-PreFlight does not replace heuristic middleware. The two serve different
-purposes:
+PreFlight does not replace any of these frameworks. Users stay on their
+existing agent framework (LangChain, Strands, Microsoft Agent Framework,
+OpenAI Agents SDK, or anything else). PreFlight is the **proof layer that
+plugs into any of them** at the interception point they already provide.
 
-- **Heuristic middleware** (AEGIS, Strands, OpenAI guardrails) is fast
-  (milliseconds), cheap, and catches common attack patterns. It is the first
-  line of defense for every tool call.
-- **PreFlight** is slower (seconds), more expensive, and provides
-  cryptographic guarantees. It is the second line of defense for high-stakes
-  actions where the consumer needs independently verifiable proof.
+The frameworks handle interception and dispatch. PreFlight handles
+verification and attestation. The proof is what none of these frameworks
+can produce on their own: they can block or allow, but they cannot *prove*
+they blocked or allowed.
 
-The [two-layer policy design](./agentcore.md) in AgentCore reflects this:
-Cedar policies (Layer 1, fast) for every call, zkARc proofs (Layer 2,
-proved) for actions that require it.
+### The integration pattern
+
+Every framework already provides a hook where custom logic runs before a
+tool call executes. The integration is the same in all of them:
+
+```
+Framework hook fires (BeforeToolCallEvent / tool guardrail / function middleware)
+    │
+    ▼
+Call PreFlight /v1/checkIt with the action text
+    │
+    ▼
+Receive SAT/UNSAT + proof π
+    │
+    ├── SAT:  attach π to the action, let the framework proceed
+    │
+    └── UNSAT: block the tool call
+```
+
+| Framework | Hook | Where PreFlight call goes |
+|-----------|------|--------------------------|
+| Strands Agents (AWS) | `BeforeToolCallEvent` | Inside the event handler |
+| OpenAI Agents SDK | Input tool guardrail | Inside the guardrail function |
+| LangChain / LangGraph | Tool call middleware / node guard | Inside the middleware callback |
+| Microsoft Agent Framework | Function middleware | Inside the `Invoke` wrapper |
+| AEGIS | Policy validation stage | As an additional policy check |
+| AgentCore Gateway | Request interceptor Lambda | Inside the Lambda function |
+
+### What this gives the user
+
+- **No framework migration.** The user keeps their existing agent stack.
+- **Proof travels with the action.** The counterparty (or auditor) receives
+  the action together with a cryptographic proof that a specific policy was
+  checked on that specific input.
+- **Framework-agnostic.** PreFlight is an HTTP API call. Any framework that
+  supports pre-execution hooks can integrate it.
+- **Layered defense.** The framework's own checks (heuristic rules, LLM
+  classifiers, pattern scanners) run first (milliseconds). PreFlight runs
+  second for high-stakes actions that need cryptographic proof (seconds).
+  The two layers complement each other.
+
+### What PreFlight adds that the hook alone cannot provide
+
+The hook gives you a place to run a check. But the check itself is only as
+trustworthy as the service that ran it. If the agent operator controls the
+middleware, the operator can skip the check, fake the result, or swap the
+policy.
+
+PreFlight's ZK proof removes this trust assumption. The proof is bound to
+the specific formula, the specific input, and the specific verdict. It is
+independently verifiable by the counterparty without trusting the agent
+operator, the middleware, or PreFlight's own infrastructure. The
+counterparty verifies the math, not a signature.
+
+The [two-layer policy design](./agentcore.md) in AgentCore reflects this
+architecture: Cedar policies (Layer 1, fast, every call) for access control,
+PreFlight proofs (Layer 2, proved, high-stakes calls) for cryptographic
+guarantees.
