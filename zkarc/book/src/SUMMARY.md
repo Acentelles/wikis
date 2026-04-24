@@ -16,4 +16,5 @@
     - [Product spec](./middleware/product-spec.md)
     - [Comparison with existing middleware](./middleware/comparison.md)
     - [RISC-V dispatch program](./middleware/riscv-dispatch.md)
+    - [Threat inventory](./middleware/threat-inventory.md)
     - [AgentCore integration](./middleware/agentcore.md)
