@@ -13,3 +13,4 @@
 - [Middleware](./middleware/middleware.md)
     - [zk(SMT) middleware](./middleware/zk-smt.md)
     - [zkML middleware](./middleware/zkml-wrapping.md)
+    - [Product spec](./middleware/product-spec.md)
