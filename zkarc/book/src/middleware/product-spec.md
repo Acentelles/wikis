@@ -1,13 +1,62 @@
 # Product spec
 
-What the middleware looks like as a shippable product.
+## PreFlight today
 
-## What the product is
+[ICME PreFlight](https://docs.icme.io/) is the deployed production system
+built on the zkARc research. It is a pay-per-use API that agents call to
+check actions against policies:
 
-A service (or self-hosted binary) that sits between an AI agent and the
-outside world. Every outbound action from the agent passes through it. The
-middleware proves the action was policy-checked, and only then dispatches it.
-The counterparty receives the action together with a proof.
+| Endpoint | Cost | What it does |
+|----------|------|-------------|
+| Policy compilation | $3.00 (one-time) | NL policy → SMT-LIB + consistency check |
+| `/v1/checkRelevance` | Free | Screens action against policy variables; determines if paid check is needed |
+| `/v1/checkIt` | $0.01 | Full SAT/UNSAT evaluation with cryptographic proof |
+| `/v1/verifyProof` | Free (single-use) | Public verification of a proof receipt |
+
+### What PreFlight already provides
+
+- **Policy compilation.** Natural-language rules compiled to SMT-LIB formal
+  logic. Consistency checking catches contradictions before deployment.
+- **Dual verification.** Local SMT solver + cloud ARc engine independently
+  check the same action. Both must return SAT for clearance.
+- **ZK proofs via Jolt.** Every `checkIt` call produces a cryptographic proof
+  receipt, downloadable and independently verifiable.
+- **x402 crypto micropayments.** Autonomous agents can pay per check with
+  USDC on Base, enabling fully autonomous agent-to-agent commerce.
+- **Three integration patterns.** Tool call interception, skill-directed
+  description, and planning step interception.
+- **99%+ soundness** on adversarial datasets, deterministic (same input
+  produces same result), resistant to prompt injection on verifiable facts.
+
+### The gap: gating vs executing
+
+PreFlight today is a **check API**: the agent calls `/v1/checkIt`, receives a
+verdict, and then *decides* whether to proceed. The agent retains control of
+dispatch. A compliant agent will respect an UNSAT verdict, but a compromised
+or adversarial agent can ignore it.
+
+The proof binds the verdict to the action, but nothing binds the action to
+what actually executes. The agent could call `checkIt`, get SAT, and then
+execute a different action.
+
+---
+
+## PreFlight v2: the middleware
+
+PreFlight v2 closes the gating gap by moving from "API the agent calls" to
+"middleware that executes." The middleware intercepts the action, checks the
+policy, and dispatches only if the proof verifies. The agent never directly
+touches the counterparty.
+
+### What changes
+
+| | PreFlight v1 (today) | PreFlight v2 (middleware) |
+|---|---|---|
+| **Who calls** | Agent calls the API | Action passes through the middleware automatically |
+| **Who dispatches** | Agent dispatches the action | Middleware dispatches the action |
+| **Can agent bypass?** | Yes (agent controls dispatch) | No (middleware controls dispatch) |
+| **Proof binding** | Verdict bound to action text | Verdict bound to action text *and* dispatch |
+| **Integration** | SDK call or HTTP request | HTTP proxy, SDK wrapper, or AgentCore Gateway interceptor |
 
 ---
 
@@ -17,45 +66,52 @@ The counterparty receives the action together with a proof.
 
 | | |
 |---|---|
-| **Input** | Natural-language policy document (e.g., "never authorize payments above \$10K without manager approval") |
-| **Process** | ARc's PMC translates the document to SMT-LIB. Optionally, Jolt Atlas proves the translation ($\pi_{\mathsf{SMTpolicy}}$). |
+| **Input** | Natural-language policy document |
+| **Process** | ARc's PMC translates to SMT-LIB. Optionally, Jolt Atlas proves the translation ($\pi_{\mathsf{SMTpolicy}}$). |
 | **Output** | Committed formal policy $\bar{P}$ + cached policy proof |
-| **Software** | ARc's translation model (or a fine-tuned SLM) + Jolt Atlas prover |
 | **Runs** | Once per policy update. Offline. |
+
+Already exists in PreFlight v1. v2 adds the optional ZK proof of
+compilation.
 
 ### 2. Middleware runtime (per-action, hot path)
 
-The core product. Five components:
+The core new component. Five subcomponents:
 
-**Interceptor.** Hooks into the agent's outbound call path. Could be:
+**Interceptor.** Hooks into the agent's outbound call path:
 - An HTTP proxy (the agent sends requests to `localhost:PORT` instead of the
   counterparty).
 - An SDK wrapper (a function call that wraps the agent's dispatch).
-- A plugin for agent frameworks (LangChain, CrewAI, AutoGen).
+- A Gateway interceptor Lambda in
+  [AgentCore](./agentcore.md) (the managed-service path).
 
-The agent sends its intended action to the middleware instead of directly to
-the counterparty.
-
-**Claim extractor.** Takes the action text and extracts SMT claims. Options:
-- A small classification model (sub-second, provable in Jolt Atlas). Produces
-  a binary verdict (compliant / non-compliant) rather than a full translation.
+**Claim extractor.** Takes the action text and extracts SMT claims:
+- A small classification model (sub-second, provable in Jolt Atlas).
 - A small generative SLM that produces a full SMT translation (1-2s, also
   provable in Jolt Atlas).
-- Hardcoded extraction rules (for v0; not provable, extraction is trusted).
+
+In PreFlight v1 this happens inside the `checkIt` endpoint. In v2 it moves
+into the middleware so the extraction is proved and bound to the action.
 
 **SMT solver.** oxiz compiled to RISC-V, running inside Jolt. Checks the
 extracted claims against the committed policy. Produces
 $\pi_{\mathsf{SMTsolver}}$.
+
+Already exists in PreFlight v1 (the Jolt-proved solver path).
 
 **Proof aggregator.** Folds the extraction proof and solver proof (and
 optionally the cached policy proof via recursive verification) into a single
 $\pi_{\mathsf{agg}}$. See
 [two-tier aggregation](../paper/proof-aggregation.md).
 
+New in v2. PreFlight v1 produces individual proofs per `checkIt` call.
+
 **Dispatcher.** If the aggregated proof verifies and the verdict is SAT,
 dispatches the action to the counterparty together with the proof. If not,
-blocks and returns an error to the agent. The dispatcher is the enforcement
-point: the action fires as a consequence of proved, policy-checked code.
+blocks and returns an error to the agent.
+
+New in v2. This is the enforcement point: the action fires as a consequence
+of proved, policy-checked code.
 
 ### 3. Verifier (counterparty-side)
 
@@ -64,93 +120,77 @@ point: the action fires as a consequence of proved, policy-checked code.
 | **Input** | Action + proof + policy commitment |
 | **Process** | Runs the Jolt / Jolt Atlas verifier (~500ms) |
 | **Output** | Accept or reject |
-| **Software** | Lightweight verifier binary, SDK, or on-chain contract. Stateless. |
+
+Already exists in PreFlight v1 (`/v1/verifyProof`). v2 adds the verifier
+SDK as a library for offline/embedded verification.
 
 ---
 
 ## What you'd ship
 
-| Component | Form factor | Who runs it |
-|-----------|------------|-------------|
-| Policy compiler | CLI tool or web UI | Policy owner (once per policy update) |
-| Middleware runtime | Docker container, cloud service, or agent-framework plugin | Agent operator |
-| Verifier | Rust library, npm package, or Solidity contract | Counterparty |
+| Component | Form factor | Who runs it | v1 status |
+|-----------|------------|-------------|-----------|
+| Policy compiler | CLI tool or web UI | Policy owner | Exists (API) |
+| Middleware runtime | Docker container, cloud service, or AgentCore interceptor | Agent operator | **New** |
+| Verifier | Rust library, npm package, or Solidity contract | Counterparty | Exists (API), SDK new |
 
 ---
 
 ## Dependencies
 
-| Dependency | Role | Notes |
-|-----------|------|-------|
-| **Jolt** | RISC-V zkVM for solver proof | Needs RISC-V compilation target |
-| **Jolt Atlas** | ONNX zkML for extraction/classification proof | Needs ONNX model export |
-| **oxiz** | Rust SMT solver | Compiled to RISC-V for in-circuit solving |
-| **ARc or equivalent SLM** | Claim extraction | ARc's proprietary model (agreement-check) or fine-tuned open model |
-| **HyperKZG SRS** | Polynomial commitment scheme | Generated once, shared across all proofs |
+| Dependency | Role | v1 status |
+|-----------|------|-----------|
+| **Jolt** | RISC-V zkVM for solver proof | In production |
+| **Jolt Atlas** | ONNX zkML for extraction/classification proof | Exists, not yet in PreFlight |
+| **oxiz** | Rust SMT solver compiled to RISC-V | In production |
+| **ARc or equivalent SLM** | Claim extraction | In production (cloud ARc) |
+| **HyperKZG SRS** | Polynomial commitment scheme | In production |
 
 ---
 
 ## Implementation phases
 
-### v0: zk(SMT) proxy (minimum viable product)
+### Phase 1: middleware wrapper around PreFlight v1
 
-The smallest shippable thing.
+The fastest path to v2: wrap the existing PreFlight API inside a middleware
+that controls dispatch.
 
-1. A Docker container that runs as an HTTP proxy.
-2. The agent sends POST requests to the middleware instead of the counterparty.
-3. The middleware extracts claims from the action using hardcoded extraction
-   rules (no ML, extraction is trusted).
-4. The middleware runs oxiz inside Jolt, produces
-   $\pi_{\mathsf{SMTsolver}}$.
-5. The middleware forwards the request to the counterparty with the proof
-   attached as an HTTP header (or JSON envelope).
-6. The counterparty has a verifier endpoint that checks the proof before
-   accepting the action. (Or ignores the proof for now, during integration.)
+1. The middleware intercepts the agent's outbound action.
+2. It calls PreFlight's existing `/v1/checkRelevance` and `/v1/checkIt`
+   endpoints.
+3. If SAT + proof verified, the middleware dispatches the action.
+4. If UNSAT, the middleware blocks.
 
-**What v0 proves:** the solver ran on these claims against this policy.
+This reuses all of PreFlight v1's infrastructure. The only new code is the
+interceptor and dispatcher. The gap (extraction not proved, no aggregation)
+remains but execution binding is achieved.
 
-**What v0 does not prove:** that the claims were correctly extracted from the
-action (extraction is trusted), or that the action plan came from a specific
-model.
+### Phase 2: proved extraction
 
-**Proving overhead:** ~2s per action (solver only).
+Move claim extraction into the middleware and prove it via Jolt Atlas.
+The middleware now produces $\pi_{\mathsf{SMTplan}}$ + $\pi_{\mathsf{SMTsolver}}$,
+folded into $\pi_{\mathsf{agg}}$.
 
-**What to build:**
-- Jolt verifier library callable from the middleware (Rust, exposed via FFI
-  or HTTP).
-- Serialisation format for $(A, b, \pi, \bar{P})$.
-- HTTP proxy with dispatch gate.
-- Policy commitment management (store $\bar{P}$, check against a registry).
-
-### v1: proved extraction
-
-Add a small classification model or SLM for claim extraction, proved via
-Jolt Atlas. The middleware now produces $\pi_{\mathsf{SMTplan}}$ (extraction)
-+ $\pi_{\mathsf{SMTsolver}}$ (solver), folded into $\pi_{\mathsf{agg}}$.
-
-**What v1 adds:** cryptographic binding between the action text and the SMT
-claims. No one can fabricate favourable claims without the proof failing.
+**What this adds:** cryptographic binding between the action text and the SMT
+claims.
 
 **Proving overhead:** ~3-4s per action (extraction + solver).
 
-### v2: policy proof integration
+### Phase 3: policy proof integration
 
 Add the cached policy proof ($\pi_{\mathsf{SMTpolicy}}$) via Tier 2
 recursive verification. The aggregated proof now covers the full pipeline
 from natural-language policy to solver verdict.
 
-**What v2 adds:** the verifier knows the formal policy came from the declared
-natural-language policy, not a substituted one.
+**What this adds:** the verifier knows the formal policy came from the
+declared natural-language policy, not a substituted one.
 
-### v3: full LLM wrapping
+### Phase 4: full LLM wrapping
 
 The middleware wraps the planner LLM and proves $\pi_{\mathsf{NLplan}}$. The
 agent's action plan is bound to a specific prompt and model execution.
 
-**What v3 adds:** the verifier knows the action plan was not fabricated
-post-hoc.
-
-**When v3 makes sense:** when the planner is a small model (sub-10s proving)
+**When this makes sense:** when the planner is a small model (sub-10s proving)
 or when hardware acceleration makes large-model proving practical.
 
 ---
@@ -159,20 +199,20 @@ or when hardware acceleration makes large-model proving practical.
 
 ```
                     ┌─────────────────────────────────────────┐
-                    │           MIDDLEWARE RUNTIME             │
+                    │         PREFLIGHT v2 MIDDLEWARE          │
                     │                                         │
 Agent ──(action)──► │  Interceptor                            │
                     │      │                                  │
                     │      ▼                                  │
-                    │  Claim Extractor ──── π_SMTplan (v1+)   │
+                    │  Claim Extractor ──── π_SMTplan (Ph.2+) │
                     │      │                                  │
                     │      ▼                                  │
-                    │  oxiz (in Jolt) ── π_SMTsolver       │
+                    │  oxiz (in Jolt) ──── π_SMTsolver        │
                     │      │                                  │
                     │      ▼                                  │
                     │  Proof Aggregator                       │
                     │      │  ┌──────────────────────┐        │
-                    │      │  │ π_SMTpolicy (cached)  │ (v2+) │
+                    │      │  │ π_SMTpolicy (cached)  │(Ph.3+)│
                     │      │  │ (recursive verify)    │        │
                     │      │  └──────────────────────┘        │
                     │      ▼                                  │
@@ -198,28 +238,20 @@ Agent ──(action)──► │  Interceptor                            │
 ## Open engineering questions
 
 1. **Proof serialisation format.** What wire format for $(A, b, \pi, \bar{P})$?
-   JSON envelope with base64-encoded proof? Protobuf? A custom binary format?
-   Needs to be compact (proofs are ~KB range) and parseable by the verifier SDK.
+   PreFlight v1 uses `proof_id` references with download endpoints. v2 may
+   need inline proofs for latency-sensitive dispatch.
 
-2. **Agent framework integration.** For LangChain/CrewAI/AutoGen: is the
-   interceptor a tool wrapper, a callback, or a transport-level proxy? Each
-   framework has different hook points.
+2. **SRS distribution.** The HyperKZG SRS must be available to both prover
+   and verifier. Currently managed internally by PreFlight. For the verifier
+   SDK, it needs to be distributable.
 
-3. **SRS distribution.** The HyperKZG SRS must be available to both prover
-   (middleware) and verifier (counterparty). Ship it as a downloadable
-   artifact? Embed it in the Docker image? Host it at a well-known URL?
+3. **Policy commitment registry.** The counterparty needs to know what
+   $\bar{P}$ to expect. PreFlight v1 uses `policy_id`. v2 may need an
+   on-chain or off-chain commitment anchor for trustless verification.
 
-4. **Policy commitment registry.** The counterparty needs to know what
-   $\bar{P}$ to expect. Is there a shared registry? Does the policy owner
-   publish $\bar{P}$ out-of-band? Or does each action carry $\bar{P}$ and the
-   counterparty checks it against an on-chain or off-chain anchor?
+4. **Reproducible builds.** The trust-your-own-setup principle requires a
+   deterministic build pipeline for the RISC-V binary commitment.
 
-5. **Reproducible builds.** The trust-your-own-setup principle requires a
-   deterministic build pipeline. The Jolt-compiled RISC-V binary must be
-   reproducible so the binary commitment is auditable. Nix, Docker with
-   pinned layers, or a custom build system?
-
-6. **Multi-policy support.** An agent may need to satisfy multiple policies
+5. **Multi-policy support.** An agent may need to satisfy multiple policies
    (internal compliance + counterparty requirements). Each produces a separate
-   proof. The middleware must check all of them and the aggregator must fold
-   all of them.
+   proof; the aggregator must fold all of them.
