@@ -1,7 +1,8 @@
 # zk(SMT) middleware
 
 The simplest middleware: the agent proves the solver step, the middleware
-verifies.
+verifies and **executes** the action. The middleware is not just a gate; it
+is the dispatch point. If the proof does not verify, the action never fires.
 
 ## Flow
 
