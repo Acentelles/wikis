@@ -8,9 +8,9 @@ check actions against policies:
 
 | Endpoint | Cost | What it does |
 |----------|------|-------------|
-| Policy compilation | $3.00 (one-time) | NL policy → SMT-LIB + consistency check |
+| Policy compilation | \$3.00 (one-time) | NL policy → SMT-LIB + consistency check |
 | `/v1/checkRelevance` | Free | Screens action against policy variables; determines if paid check is needed |
-| `/v1/checkIt` | $0.01 | Full SAT/UNSAT evaluation with cryptographic proof |
+| `/v1/checkIt` | \$0.01 | Full SAT/UNSAT evaluation with cryptographic proof |
 | `/v1/verifyProof` | Free (single-use) | Public verification of a proof receipt |
 
 ### What PreFlight already provides
