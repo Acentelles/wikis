@@ -1,7 +1,18 @@
 # RISC-V dispatch program
 
-The strongest form of execution binding: a small RISC-V guest program that
-verifies the PreFlight proof and commits to a dispatch instruction, all
+> **Scope.** This is an optional hardening step for specific, standardised
+> tool calls (e.g., a fixed-format HTTP POST), not a general solution.
+> Tool calls in practice are arbitrary (HTTP APIs, database queries, shell
+> commands, smart contract calls, file operations) and user-dependent.
+> Wrapping all of them in a RISC-V guest is not practical. For the general
+> case, PreFlight's role is to **prove the policy check** and **bind the
+> proof to the action text**; dispatch is left to the user's agent
+> framework. See the [comparison page](./comparison.md) for how the proof
+> layer integrates with any framework.
+
+For the narrow case where the tool call format is simple and standardised,
+a RISC-V guest program provides the strongest form of execution binding:
+it verifies the PreFlight proof and commits to a dispatch instruction, all
 inside the zkVM. The proof attests that the dispatch is a deterministic
 consequence of a verified policy check.
 
