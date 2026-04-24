@@ -579,6 +579,125 @@ Lattice Estimator on ML-DSA parameters ($N = 2048$) while varying
 dimension from 2048 to 1536 gives estimated bit-security of 288.2 and
 209.6, respectively: a drop from NIST category V to category III.
 
+## Why Nightstream uses $\Phi_{81}$ and whether it can change
+
+### Why $\Phi_{81}$
+
+The choice comes from Neo's concrete parameterization (Neo, Section 6.2).
+The constraint is **Module-SIS security over Goldilocks**:
+
+- Goldilocks ($q = 2^{64} - 2^{32} + 1$) has $v_2(q-1) = 32$, so any
+  power-of-two cyclotomic $\Phi_{2^k}$ with $k \leq 33$ **splits
+  completely** over $\mathbb{F}_q$: $R_q \cong \mathbb{F}_q^d$. An
+  attacker then works over individual $\mathbb{F}_q$ components, getting
+  only 64 bits of security regardless of $d$ (Neo, Remark 2).
+- With $\eta = 81 = 3^4$, $q \bmod 81 = 4 \neq 1$, so $\Phi_{81}$ does
+  **not** split over $\mathbb{F}_q$. The ring retains the algebraic
+  structure that makes Module-SIS hard. Neo achieves ~128 bits of
+  security with $\kappa = 16$, $d = 54$.
+- The trade-off: $81 \nmid q - 1$ means NTT is unavailable, so
+  Nightstream uses schoolbook multiplication with the `rot_step`
+  optimization. This is slower than NTT but acceptable because Neo's
+  pay-per-bit property keeps commit cost manageable for binary witnesses.
+
+### Option 1: Almost Goldilocks (AGL) + $\Phi_{128}$
+
+The Neo paper already provides this parameterization (Section 6.1):
+$q_{\text{AGL}} = (2^{64} - 2^{32} + 1) - 32$ with $\eta = 128$,
+$d = 64$, $\kappa = 13$, ~127 bits of security. Because
+$q_{\text{AGL}} \bmod 128 \neq 1$, the ring does not split. This is the
+cleanest path for ABBA (even $n = 64$, 25% compression confirmed). The
+field arithmetic is nearly identical to Goldilocks (a small tweak to
+the Solinas reduction). See the
+[fields appendix](../appendix/fields-and-cyclotomics.md) for the
+$(q, \eta)$ compatibility analysis.
+
+### Option 2: Goldilocks + non-power-of-two even conductor
+
+The natural idea is to keep Goldilocks and use an even conductor that
+avoids the splitting problem. The simplest candidate is
+$\eta = 162 = 2 \times 81$. **This does not work**, for a fundamental
+reason.
+
+**The field isomorphism.** For any odd $m$, $\gcd(2, m) = 1$, so
+$\zeta_{2m} = -\zeta_m$ is a primitive $2m$-th root of unity iff
+$\zeta_m$ is a primitive $m$-th root. This means
+$\mathbb{Q}(\zeta_{2m}) = \mathbb{Q}(\zeta_m)$ and
+$\Phi_{2m}(X) = \Phi_m(-X)$. Concretely:
+
+$$\Phi_{162}(X) = \Phi_{81}(-X) = X^{54} - X^{27} + 1$$
+
+The ring $\mathbb{F}_q[X]/(\Phi_{162})$ is isomorphic to
+$\mathbb{F}_q[X]/(\Phi_{81})$ via $X \mapsto -X$. Same degree ($d = 54$),
+same security, same everything.
+
+**The parity obstruction persists.** In ABBA's framework, $\eta = 2n$
+where $n$ is the conductor of the quaternion component field $K$. For
+$\eta = 162$: $n = 81$ (odd). The parity condition $\varphi(2n) = 2\varphi(n)$
+fails. $\dim(T_0) = 81 > 54 = \dim(O_L)$. ABBA is still 50% larger
+than Ajtai.
+
+Doubling an odd conductor does not escape the parity obstruction because
+it does not change the underlying field.
+
+**What about other even conductors?** To get ABBA's 25% compression, we
+need $n$ even (i.e. $4 \mid \eta$) AND the ring must not split over
+Goldilocks. Candidates:
+
+| $\eta$ | $n = \eta/2$ | $d = \varphi(\eta)$ | $D_K = \varphi(n)$ | $n^+$ | $\dim(T_0)$ | Splits over GL? | ABBA viable? |
+|---|---|---|---|---|---|---|---|
+| 108 | 54 | 36 | 18 | 9 | 27 | no ($108 \nmid q-1$) | marginal ($n^+ = 9$, weak ComSIS) |
+| 156 | 78 | 48 | 24 | 12 | 36 | no | moderate ($n^+ = 12$) |
+| 204 | 102 | 64 | 32 | 16 | 48 | no ($204 \nmid q-1$) | good ($n^+ = 16$, same as $\Phi_{128}$) |
+| 324 | 162 | 108 | 54 | 27 | 81 | no ($324 \nmid q-1$) | good but $d = 108$ is large |
+
+These all satisfy $4 \mid \eta$ (so $n$ is even) and do not split over
+Goldilocks. However, they introduce complications compared to
+$\Phi_{128}$:
+
+1. **Non-power-of-two $\Phi$**: the cyclotomic polynomial has more than
+   2 terms (e.g. $\Phi_{108} = X^{36} - X^{18} + 1$), so the shift
+   matrix $F$ and rot_step are more complex than the simple negacyclic
+   case.
+2. **No NTT**: since $\eta \nmid q - 1$ for all candidates, ring
+   multiplication is schoolbook (same as current $\Phi_{81}$).
+3. **Theta re-derivation**: the coefficient permutation implementing
+   $\theta(\zeta_n) = \zeta_n^{-1}$ must be recomputed for each new
+   $\Phi_n$. For non-power-of-two conductors, the permutation has a
+   more complex structure (not just $i \mapsto d - i$).
+4. **Security re-estimation**: the Lattice Estimator must be rerun for
+   each $(q, \eta, \kappa)$ triple.
+
+The most promising candidate is $\eta = 204$ ($n = 102 = 2 \times 3 \times 17$),
+which gives $d = 64$ (same as $\Phi_{128}$), $n^+ = 16$ (same ComSIS
+security dimension), and $\dim(T_0) = 48$ (25% compression). It is
+essentially the "non-power-of-two analogue" of $\Phi_{128}$ that avoids
+Goldilocks splitting. However, the polynomial $\Phi_{204}$ has a complex
+multi-term structure, making the arithmetic and theta derivation
+significantly harder than $X^{64} + 1$.
+
+### Option 3: stay on Goldilocks + $\Phi_{81}$
+
+Accept that ABBA does not help at this conductor. The current setup
+achieves ~128 bits of security with well-optimized Ajtai commitments.
+ABBA's value would then be limited to other applications (e.g., blind
+signatures, standalone commitments) rather than Nightstream integration.
+
+### Recommendation
+
+**AGL + $\Phi_{128}$ (Option 1) is the best path for ABBA.** It is
+already parameterized in the Neo paper, uses the simplest possible
+cyclotomic ($X^{64} + 1$), and avoids all the complications of
+non-power-of-two conductors. The field change from Goldilocks to AGL is
+minimal (a 32-unit shift in the modulus). The porting effort is
+dominated by the ring-layer changes (`neo-math`), not the field change.
+
+Option 2 ($\eta = 204$ over Goldilocks) is a fallback if AGL is
+unacceptable for ecosystem reasons (e.g., if the proof system must
+compose with Goldilocks-native components that cannot tolerate the
+modulus change). It gives identical dimensions and security but at the
+cost of a harder cyclotomic polynomial.
+
 ## Open questions
 
 1. Can the Lyubashevsky-Micciancio one-time signature be adapted to use the

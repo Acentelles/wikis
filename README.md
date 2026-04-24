@@ -6,6 +6,7 @@ and published to GitHub Pages.
 Published books:
 
 - `pq/` , Post-Quantum Cryptography Notes (isogeny- and lattice-based)
+- `zkarc/` , zkARc: Verifiable Guardrails for Agentic Commerce
 
 ## Local build
 

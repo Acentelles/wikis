@@ -1,0 +1,15 @@
+# Summary
+
+- [Introduction](./intro.md)
+- [The paper](./paper/paper.md)
+    - [Threat model](./paper/threat-model.md)
+    - [Proof-carrying guardrails](./paper/proof-stack.md)
+    - [Translation correctness](./paper/translation-correctness.md)
+    - [Solver proofs](./paper/solver-proofs.md)
+    - [Hidden-policy trust](./paper/hidden-policy-trust.md)
+    - [Proof aggregation](./paper/proof-aggregation.md)
+    - [Model and input hiding](./paper/hiding.md)
+    - [Related work](./paper/related-work.md)
+- [Middleware](./middleware/middleware.md)
+    - [zk(SMT) middleware](./middleware/zk-smt.md)
+    - [zkML middleware](./middleware/zkml-wrapping.md)

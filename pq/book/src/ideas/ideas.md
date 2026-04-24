@@ -15,3 +15,6 @@ pursuing," not as claims about what has been proved or implemented.
 | mLIP ↔ abelian variety isogeny correspondence | [link](./mlip-isogeny-correspondence.md) |
 | Zero-knowledge for Neo without Nova | [link](./zk-neo-folding.md) |
 | Isogeny-based SNARKs as wrappers | [link](./isogeny-wrapper-snark.md) |
+| ABBA commitments in Hachi's multilinear PCS | [link](./abba-in-hachi.md) |
+| One-time signatures from ComSIS | [link](./comssis-ots.md) |
+| Homotopy folding on tori | [link](./homotopy-folding-on-tori.md) |

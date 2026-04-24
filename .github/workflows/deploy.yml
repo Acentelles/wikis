@@ -34,6 +34,7 @@ jobs:
           cp landing/index.html site/index.html
           mdbook build pq/book -d "$GITHUB_WORKSPACE/site/pq"
           mdbook build jolt-atlas/book -d "$GITHUB_WORKSPACE/site/jolt-atlas"
+          mdbook build zkarc/book -d "$GITHUB_WORKSPACE/site/zkarc"
 
       - uses: actions/configure-pages@v5
 

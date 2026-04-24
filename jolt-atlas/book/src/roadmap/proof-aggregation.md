@@ -185,15 +185,81 @@ $V_{\mathsf{agg}}$ does not see: any model weights, any intermediate activations
 
 ---
 
+## Two-tier aggregation: folding within sessions, recursion across sessions
+
+The phased approach above implicitly assumes all proofs are produced in the same session. In practice, the zkARc proof stack spans two time horizons:
+
+- **Setup-time proofs.** $\pi_{\mathsf{SMTpolicy}}$ is produced once when the policy is authored or updated, potentially days before any action is checked. Only the proof (not the witness) is stored.
+- **Per-action proofs.** $\pi_{\mathsf{SMTplan}}$, $\pi_{\mathsf{SMTsolver}}$, and optionally $\pi_{\mathsf{NLplan}}$ are produced in real time with witnesses in memory.
+
+Nova folding requires both witnesses to be available simultaneously (to compute the cross-term $T$). If the policy proof was generated a week ago and the witness discarded, pure folding cannot incorporate it.
+
+**Resolution: two tiers.**
+
+- **Tier 1 (folding).** Per-action proofs are produced in the same session with witnesses in memory. They fold directly via Nova NIFS into one `RelaxedR1CSInstance`, settled by a single Spartan decider. This is the fast path.
+- **Tier 2 (recursion).** The setup-time proof $\pi_{\mathsf{SMTpolicy}}$ is verified *inside* the Tier 1 circuit: the per-action prover takes the serialised policy proof as a public input and checks its validity, binding the output commitment $\bar{P}_{\mathsf{SMT}}$ to the policy input of $\pi_{\mathsf{SMTsolver}}$. Since the Jolt Atlas verifier is already compressed to a single R1CS check + PCS opening via BlindFold, this recursive subcircuit is compact.
+
+**Result:** the aggregated verifier checks one proof, sees the commitments and the verdict, and is done. The policy proof acts as a reusable credential that the per-action prover carries and verifies.
+
+---
+
+## Proven-SLM translation correctness
+
+A key question for zkARc is how to guarantee that the translation model (the SLM that converts natural-language actions to SMT claims) did its job correctly. Running $k$ translators and checking verdict agreement is not enough: without a ZKP, no translator is proven to have run.
+
+The design adopted in the paper:
+
+1. **Prove the SLM ran.** The local SLM is small enough for Jolt Atlas. $\pi_{\mathsf{SMTplan}}$ attests that a committed model executed on the action text and produced a specific translation. This is the binding anchor.
+2. **Check agreement with a proprietary model.** A larger proprietary translator (e.g., the ARc production model) runs on trusted infrastructure and produces its own verdict. Inside the ZK circuit, a scalar equality check verifies that the proven SLM's solver verdict matches the proprietary verdict (supplied as a private witness).
+
+The residual threat is narrow: a compromise of the proprietary infrastructure could inject a false agreement. But the guarantees are strictly better than either approach alone.
+
+---
+
+## Checker-based solver proofs
+
+The solver proof $\pi_{\mathsf{SMTsolver}}$ has two instantiation options:
+
+1. **Full solver in Jolt.** Oaksive (Rust SMT solver) compiled to RISC-V runs inside Jolt. Up to 50 rules within a ~2s proving budget. Provides solver-execution binding (the verifier knows *which* solver ran).
+2. **Checker-based.** The solver runs natively and emits a certificate. A small checker (LRAT for SAT, Alethe for SMT) runs inside the zkVM. The ZK proof attests "there exists a certificate that passes this check." The certificate is a private witness (important for policy hiding). Cost scales with checker complexity (near-linear), not solver complexity (exponential worst-case).
+
+The checker-based approach sidesteps the SMT proof-format standardisation debate: the ZK proof *is* the portable, succinct proof format.
+
+---
+
+## Execution-binding middleware
+
+The paper introduces an enforcement-layer middleware that closes the gap between "the guardrail was checked" and "the checked action is the one that executed":
+
+1. The agent generates a plan and obtains a zkARc proof that it passes the policy.
+2. The middleware intercepts every outbound action and requires a valid proof before dispatch.
+3. The counterparty's system rejects any action that arrives without a valid proof.
+
+The middleware itself does not need to be trusted, because the proof is the trust anchor. The remaining gap (between action-as-received and action-that-executes-downstream) is a distributed-systems problem rather than a cryptographic one.
+
+---
+
+## Hidden-policy B2B trust
+
+In hidden-policy mode, $P_{\mathsf{NL}}$ and $P_{\mathsf{SMT}}$ are private witnesses committed as $\bar{P}$. The counterparty trusts the proof but cannot inspect the policy. Three levels of trust address this:
+
+1. **Auditor-mediated.** A third party inspects the policy, verifies it meets a standard, and signs $\bar{P}$.
+2. **Meta-property proofs.** The policy owner proves in ZK that the committed policy satisfies structural properties ("contains a rule about X") without revealing the full rule set.
+3. **Reputation-backed.** The counterparty trusts reputation for policy *content* but gets cryptographic assurance that the policy was *executed correctly*.
+
+---
+
 ## Open Questions
 
 1. **R1CS shape compatibility.** When folding Jolt and Jolt Atlas BlindFold instances, do the R1CS shapes match? If not, what is the padding overhead? A CCS/HyperNova approach would avoid this but requires migration.
 
 2. **Shared SRS.** With HyperKZG in both systems, can they share a single SRS, or do the different maximum polynomial sizes require separate setups? Sharing an SRS simplifies deployment.
 
-3. **Streaming aggregation.** Can proofs be folded incrementally as they arrive (e.g., fold $\pi_{\mathsf{NLplan}}$ first, then fold in $\pi_{\mathsf{SMTplan}}$ when ready), or must all proofs be available simultaneously?
+3. **Streaming aggregation.** Can proofs be folded incrementally as they arrive (e.g., fold $\pi_{\mathsf{NLplan}}$ first, then fold in $\pi_{\mathsf{SMTplan}}$ when ready), or must all proofs be available simultaneously? The two-tier design partially answers this: Tier 1 proofs must be simultaneous, but Tier 2 (policy proof) is pre-computed and only verified.
 
 4. **Cross-proof data flow.** In zkARc, the output of one proof is the input to the next (e.g., the action plan output by the planner is the input to the answer verifier). How is this linkage enforced in the aggregated proof? Committed outputs from one component must match committed inputs of the next.
+
+5. **Checker format maturity.** LRAT checkers are well-established for SAT. Alethe for SMT is emerging. Is the QF_NRIA fragment used by ARc covered by existing Alethe checkers, or does it require a custom checker?
 
 ---
 

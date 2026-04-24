@@ -167,30 +167,83 @@ That is essentially tight for a *generic* matrix, since the witness
 carries $n^2$ degrees of freedom and each constraint fixes $O(1)$ of
 them.
 
-For LIP specifically, we can do better. The Gram block already
-enforces $U^\top Q_0 U = Q_1$, and any well-posed LIP instance
-satisfies $\det(Q_0) = \det(Q_1) \ne 0$ as public scalars (equivalent
-lattices have equal Gram determinants; the verifier can check this
-once on the public inputs). Taking determinants of the Gram equation
-over $\mathbb{Z}$,
-$$
-\det(U)^2 \cdot \det(Q_0) \;=\; \det(Q_1)
-\;\;\Longrightarrow\;\;
-\det(U)^2 = 1
-\;\;\Longrightarrow\;\;
-\det(U) = \pm 1.
-$$
-Unimodularity falls out as a *consequence* of the Gram block. No
-inverse witness is required.
+For LIP specifically, we can do better. The argument has three
+pieces glued together: a public-input invariant, a determinant
+identity on the Gram equation, and an integer-only extraction of
+$\det(U) = \pm 1$.
 
-The one thing this argument needs is that the $\mathbb{F}_p$ equation
-actually lifts to $\mathbb{Z}$. With $\|U\|_\infty \le B$ and
-$\|Q_0\|_\infty \le M$, every entry of $U^\top Q_0 U$ is bounded by
-$n B^2 M$, so picking $p > 2 n B^2 M$ makes the $\mathbb{F}_p$
-equation imply the $\mathbb{Z}$ equation coordinate-wise, and the
-determinant identity then holds over $\mathbb{Z}$. For HAWK-scale
-parameters ($n \approx 2^9$, $B \approx 2^{30}$, $M \approx 2^{30}$),
-the bound is $\approx 2^{99}$, comfortably below a BN254-scale prime.
+**Piece 1: $\det(Q_0) = \det(Q_1)$ is automatic for any well-posed
+LIP instance.** A Gram matrix of a lattice $\Lambda$ with basis $B$
+(columns = basis vectors) is $G = B^\top B$, and
+$$
+\det(G) \;=\; \det(B)^2 \;=\; \mathrm{covol}(\Lambda)^2.
+$$
+That is, $\det(G)$ is the squared covolume of the lattice, which is
+a *lattice invariant* independent of the chosen basis. Two lattices
+are equivalent in the LIP sense exactly when they are isometric,
+which in particular preserves covolume, so any pair $(Q_0, Q_1)$
+that actually comes from equivalent lattices satisfies
+$\det(Q_0) = \det(Q_1)$. Contrapositive: if $\det(Q_0) \ne \det(Q_1)$
+then no unimodular $U$ can satisfy $U^\top Q_0 U = Q_1$, so the
+instance is vacuous and the verifier should reject. Since $Q_0$
+and $Q_1$ are public inputs, this check is an $O(n^3)$ one-time
+computation outside the circuit; we never pay for it in R1CS.
+
+**Piece 2: the determinant identity.** The determinant is a
+multiplicative map on matrix multiplication, so applying $\det$ to
+both sides of the Gram equation $U^\top Q_0 U = Q_1$ (viewing it as
+an identity of integer matrices) gives
+$$
+\det(U^\top) \cdot \det(Q_0) \cdot \det(U) \;=\; \det(Q_1).
+$$
+Since $\det(U^\top) = \det(U)$ for any square matrix, this collapses
+to
+$$
+\det(U)^2 \cdot \det(Q_0) \;=\; \det(Q_1).
+$$
+Combining with $\det(Q_0) = \det(Q_1) \ne 0$ from Piece 1, we can
+divide both sides by $\det(Q_0)$ and conclude
+$$
+\det(U)^2 \;=\; 1.
+$$
+
+**Piece 3: the only integer solutions are $\pm 1$.** Over the
+integers, the equation $x^2 = 1$ has exactly two solutions,
+$x = +1$ and $x = -1$, so $\det(U) \in \{+1, -1\}$, i.e.,
+$U \in \mathrm{GL}_n(\mathbb{Z})$ is unimodular. This is the
+property we wanted to force.
+
+Unimodularity falls out as a *consequence* of the Gram block. No
+inverse witness is required. The Gram equation, public equality of
+determinants, and integrality of $U$ together do all the work.
+
+**Why the argument has to live over $\mathbb{Z}$, not $\mathbb{F}_p$.**
+Piece 2's identity uses $\det$ on integer matrices and Piece 3 uses
+$x^2 = 1 \Rightarrow x = \pm 1$ over $\mathbb{Z}$. Both steps fail
+over $\mathbb{F}_p$: modulo $p$, the equation $x^2 = 1$ has two
+residue-class solutions ($x \equiv \pm 1$) but those residue classes
+contain infinitely many integers ($\ldots, -p-1, -1, p-1, 2p-1,
+\ldots$ and $\ldots, -p+1, 1, p+1, 2p+1, \ldots$). So a cheating
+prover could, in principle, pick a witness whose true integer
+determinant is some large value $\equiv \pm 1 \pmod p$ yet not in
+$\{\pm 1\}$, and the $\mathbb{F}_p$-only argument would accept.
+
+To rule this out we enforce $\|U\|_\infty \le B$ as a range check on
+the witness, and pick $p$ large enough that the $\mathbb{F}_p$
+version of the Gram equation forces the $\mathbb{Z}$ version
+coordinate-wise. Each entry
+$(U^\top Q_0 U)_{ij} = \sum_{k, l} U_{ki}\, Q_0[k, l]\, U_{lj}$ is a
+sum of $n^2$ products of three numbers each of absolute value at
+most $\max(B, M)$ (where $M := \|Q_0\|_\infty$), so
+$\bigl|(U^\top Q_0 U)_{ij}\bigr| \le n^2 B^2 M$. Picking
+$p > 2 n^2 B^2 M$ ensures each true integer value fits in
+$[-p/2, p/2)$, so $\mathbb{F}_p$-equality forces integer equality.
+Once the Gram equation holds over $\mathbb{Z}$, Pieces 2 and 3 run
+and deliver $\det(U) = \pm 1$ over $\mathbb{Z}$.
+
+For HAWK-scale parameters ($n \approx 2^9$, $B \approx 2^{30}$,
+$M \approx 2^{30}$), the bound is $\approx 2^{108}$, comfortably
+below a BN254-scale prime.
 
 **Revised constraint count.**
 
@@ -517,7 +570,7 @@ Concretely, to turn this observation into a short paper:
    - Pick the range bound $B$ accordingly. Under option (a), $B$ must
      cover the cofactors of $U$ (entries of $V = U^{-1}$), which are
      materially larger than $U$'s entries. Under option (b), $B$
-     must satisfy $n B^2 \|Q_0\|_\infty < p/2$ so the Gram equation
+     must satisfy $n^2 B^2 \|Q_0\|_\infty < p/2$ so the Gram equation
      lifts from $\mathbb{F}_p$ to $\mathbb{Z}$.
 5. **Zero-knowledge of $U$.** LIP is a search problem whose secret is
    $U$ itself, so the proof must be zero-knowledge for $U$ (not merely

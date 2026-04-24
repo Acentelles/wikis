@@ -1,0 +1,7 @@
+[book]
+authors = ["Alberto Centelles"]
+language = "en"
+src = "src"
+title = "zkARc"
+
+[preprocessor.katex]

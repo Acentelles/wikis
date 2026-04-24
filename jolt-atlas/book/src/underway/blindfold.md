@@ -87,39 +87,98 @@ All four have `todo!()` default implementations. They compile, but calling them 
 
 ---
 
+## What is Now Implemented (Pipeline Integration)
+
+The subprotocol machinery has been wired into the proof pipeline. The `onnx_proof::zk` module (cfg-gated behind `--features zk`) provides a single-pass ZK prove/verify flow for models using supported operators.
+
+### Per-operator constraints
+
+Four operators have BlindFold constraint implementations:
+
+| Operator | Output constraint formula | Challenge values |
+|---|---|---|
+| Square | `batching * eq_eval * operand * operand` | `eq_eval`, `batching_coeff` |
+| Add | `batching * eq_eval * left + batching * eq_eval * right` | `eq_eval`, `batching_coeff` |
+| Reshape | `batching * selector_claim * input` | `selector_claim`, `batching_coeff` |
+| Slice | `batching * selector_claim * input` | `selector_claim`, `batching_coeff` |
+
+All four use `InputClaimConstraint::default()` (baked constant from eval reduction). The batching coefficient is added automatically by `prove_zk` via `OutputClaimConstraint::scale_by_new_challenge()`.
+
+For Square and Add, the macro-generated `impl_standard_params!` was replaced with manual `SumcheckInstanceParams` impls to include the cfg-gated constraint methods. Reshape and Slice already had manual impls.
+
+### ZK prove/verify pipeline (`onnx_proof::zk`)
+
+- `prove_zk()`: single-pass flow. Traces the model once, runs setup (commit witness polynomials, output claim), then for each node runs eval reduction + `BatchedSumcheck::prove_zk` with Pedersen-committed round polynomials. Builds `BlindFoldWitness` / `VerifierR1CS` from accumulated `ZkStageData`, then runs `BlindFoldProver::prove` (Nova folding + Spartan + Hyrax openings).
+- `verify_zk()`: verifies the `BlindFoldProof`.
+- `run_zk_sumcheck()`: factored helper for the common pattern (drain pending claims, create Pedersen generators, call `prove_zk` on a single sumcheck instance).
+- `ZkProofBundle`: carries the `BlindFoldProof`, verifier input, Pedersen generators, stage configs, baked public inputs, eval reduction proofs, and polynomial commitments.
+
+Operators without sumcheck stages (Input, Identity, Broadcast, MoveAxis, Constant) are handled by eval reduction only (no BlindFold stage data).
+
+### Batching coefficient fix
+
+`BatchedSumcheck::prove_zk` scales sumcheck polynomials by batching coefficients, so the final claim = `batching_coeff * expected_output`. The raw output constraints evaluate to the unbatched value. `prove_zk` now wraps each output constraint with `OutputClaimConstraint::scale_by_new_challenge()` and appends the batching coefficient as the final challenge value, so the R1CS correctly checks `final_claim == batching_coeff * raw_constraint_output`.
+
+### `y_com` transcript binding
+
+Infrastructure for `y_com` (Pedersen commitment to the batch opening evaluation claim) is in `prove_zk`. When committed polynomials are present (`poly_map` is non-empty), the prover replays the batch opening reduction, commits the joint claim via Pedersen, and appends `y_com` to the transcript. For Square/Add/Reshape/Slice (no committed polynomials), this is a no-op. It activates when operators with committed polynomials (Erf, Div, etc.) are added.
+
+Analysis showed that HyperKZG's intermediate evaluation matrix `v` does not need hiding (evaluations at random challenge points inside the PCS are simulatable under honest-verifier ZK). Only the final evaluation claim needs `y_com` binding. See the [BlindFold Integration Plan](./blindfold-integration.md) for the full analysis.
+
+### `pending_claims` fix
+
+`ProverOpeningAccumulator::append_virtual` now pushes to `pending_claims` / `pending_claim_ids` under `#[cfg(feature = "zk")]`, matching Jolt upstream. Without this, `prove_zk` collected zero output claims.
+
+### End-to-end ZK tests
+
+Four e2e tests validate the full pipeline:
+
+- `test_square_zk`: Square-only model, 16 elements
+- `test_add_zk`: Add with constant, 16 elements
+- `test_reshape_zk`: Reshape [4,4] to [16]
+- `test_slice_zk`: Slice axis 1, range [2..6] on [2,8] input
+
+Plus `test_square_blindfold_e2e` (standalone BlindFold test in `square.rs`) and `test_square_blindfold_constraint_consistency` (constraint formula validation with synthetic data).
+
+### Performance (release, Square n=65536)
+
+| | Standard | ZK | Overhead |
+|---|---|---|---|
+| Prove | 3.2ms | 24.3ms | 7.6x |
+| Verify | 1.0ms | 3.3ms | 3.3x |
+
+The overhead is dominated by curve operations on a small workload. At n=1M, prove overhead drops to 2.9x. Verify is faster for ZK at large sizes because `verify_zk` only runs the tiny BlindFold verifier. This matches Jolt's experience: BlindFold overhead is negligible at scale.
+
+### ZK guarantee
+
+Tests validate **completeness** (honest prover is accepted) and **constraint synchronization** (the constraint formulas match the actual claim computations). Neither codebase (Jolt nor Atlas) tests the zero-knowledge property directly (e.g., via a simulator). The ZK guarantee comes from the protocol design: Pedersen commitments are hiding, Nova folding masks the real witness with a random satisfying instance (one-time pad), and Spartan operates on the folded instance. The tests catch implementation bugs that would break both completeness and ZK.
+
+---
+
 ## What is Not Yet Implemented
 
-The subprotocol machinery is complete, but it is not yet wired into the proof pipeline. The following items remain before an end-to-end ZK proof can be generated:
+### 1. Multi-stage operators
 
-### 1. Per-operator `InputClaimConstraint` / `OutputClaimConstraint`
+Operators with multiple sumcheck stages per prove call are not yet wired:
 
-Every operator's sumcheck instance (Add, Einsum, Softmax, Div, Rsqrt, ReLU, Gather, etc.) must implement the four constraint methods on `SumcheckInstanceParams`. Each constraint describes, as a sum-of-products over `ValueSource::{Opening, Challenge, Constant}`, the same formula that `input_claim()` and `expected_output_claim()` compute today. The constraint must stay in lockstep with the claim computation; any mismatch causes BlindFold R1CS unsatisfiability.
+- **Lookup-based activations** (Erf, Cos, Sin, Tanh, Sigmoid, Rsqrt): 4 stages each (neural teleportation division, lookup, range check, one-hot)
+- **Division** (Div, ScalarConstDiv): multiple stages with range checking
+- **Gather**: 3 stages (read-raf, booleanity, hamming weight)
+- **Einsum** (6 variants): sum-of-products with 2-3 input polynomials
+- **Softmax** (5 sub-stages): complex multi-stage pipeline
+- **ReLU**: multi-stage with lookup
 
-This is the largest remaining task. There are approximately 20 distinct sumcheck instance types across the operator implementations in `jolt-atlas-core/src/onnx_proof/ops/`.
+### 2. Multi-operator graphs
 
-### 2. ONNXProof integration
-
-`ONNXProof::prove` needs a ZK code path that:
-
-1. Creates a `BlindFoldAccumulator`.
-2. Calls `prove_zk` instead of `prove` for each sumcheck stage (the IOP loop, the eval-reduction sumchecks, and the batch-opening sumcheck).
-3. Builds `StageConfig`s and `BakedPublicInputs` from the Fiat-Shamir transcript.
-4. Calls `BlindFoldProver::prove` to produce a `BlindFoldProof`.
-5. Stores the `BlindFoldProof` in the `ONNXProof` (replacing `opening_claims: Claims<F>` with a cfg-gated field).
-
-`ONNXProof::verify` needs the mirror: detect ZK mode from the proof, call `verify_zk` for each stage, then `BlindFoldVerifier::verify`.
+Each test uses a single operator. A model combining multiple operators (e.g., Square + Add + Reshape) has not been tested. The `prove_zk` flow iterates nodes in reverse topological order and accumulates stage data, so it should work; it just lacks test coverage.
 
 ### 3. `SumcheckInstanceProof` unification
 
-The existing `SumcheckInstanceProof<F, T>` struct (used in ~40 files across `jolt-atlas-core`) needs to become an enum `Clear | Zk` or have cfg-gated fields. This is deferred because it touches every operator file. A type alias strategy (`type AtlasSumcheckProof<F, T> = SumcheckProof<F, Bn254Curve, T>`) can limit the blast radius.
+The existing `SumcheckInstanceProof<F, T>` is not yet an enum `Clear | Zk`. The ZK pipeline uses a separate `ZkSumcheckProof` type and a standalone `prove_zk` / `verify_zk` flow rather than modifying `ONNXProof::prove` / `verify`.
 
-### 4. ZK evaluation commitments (y_com) on HyperKZG
+### 4. Transcript chaining
 
-The HyperKZG opening proof currently sends polynomial evaluations in the clear. Under BlindFold, these become Pedersen commitments ($y_\text{com} = v \cdot G_0 + \rho \cdot H$) whose consistency is checked inside the BlindFold R1CS. This requires extending `HyperKZGProof` with a `y_com` field and modifying `prove`/`verify` to bind it.
-
-### 5. End-to-end test
-
-Once per-operator constraints are in place, a transformer end-to-end test under `--features zk` (analogous to Jolt's `muldiv` test) will catch claim/constraint desynchronization.
+The ZK prover uses its own transcript, not chained with a standard-mode transcript. In production, the transcripts should be unified so that the Fiat-Shamir chain covers both the IOP and the BlindFold proof.
 
 ---
 

@@ -155,3 +155,92 @@ reduction at $\Phi_{128}$ with moderate overhead (~1.4$\times$). The
 algebraic properties (theta involution, tracelessness, sparse
 commutator, linearity) are field-independent and verified by tests
 over both fields.
+
+## Independence of field and cyclotomic ring
+
+The choice of field $\mathbb{F}_q$ and cyclotomic conductor $\eta$
+(defining $R_q = \mathbb{F}_q[X]/(\Phi_\eta)$) are **algebraically
+independent** but **practically coupled**.
+
+### What is independent
+
+Three properties of ABBA depend only on the conductor $\eta$, not on
+the field $\mathbb{F}_q$:
+
+1. **The 25% compression ratio.** This comes from
+   $\dim(T_0)/\dim(\Lambda) = 3/4$, a consequence of the eigenspace
+   decomposition of the theta automorphism on $\mathcal{O}_K$. It
+   depends on the Galois structure of $\mathbb{Q}(\zeta_n)$ and on the
+   [parity of $n$](../papers/abba.md#the-parity-obstruction), not on $q$.
+2. **The ABBA/Ajtai overhead ratio** (~1.4$\times$). This comes from the
+   3-vs-1 sparse-operations-per-column structure of the commutator. The
+   ratio is the same over Goldilocks and Baby Bear because the operation
+   count is identical; only the cost per operation changes.
+3. **The algebraic identities** (theta is an involution, commutators are
+   traceless, bilinearity). These hold over any $\mathbb{F}_q$.
+
+Conversely, **arithmetic speed** depends only on $q$ (field size), not
+on $\eta$: Baby Bear is ~2$\times$ faster than Goldilocks regardless
+of the cyclotomic polynomial.
+
+### What is coupled
+
+Despite the algebraic independence, three practical constraints link the
+choice of $q$ and $\eta$:
+
+1. **NTT compatibility.** NTT-based ring multiplication requires $\eta$-th
+   roots of unity in $\mathbb{F}_q$, i.e. $\eta \mid q - 1$ (complete
+   splitting). If this fails, ring multiplication falls back to schoolbook
+   $O(d^2)$ or Karatsuba. The
+   [compatibility matrix](#cyclotomic-compatibility-matrix) above captures
+   this constraint.
+
+2. **Security level.** Module-SIS/ComSIS hardness depends on both $q$ and
+   $d = \varphi(\eta)$ together. The lattice dimension seen by an
+   attacker is $n_{\text{rows}} \cdot d$ over $\mathbb{Z}_q$. A smaller
+   $q$ (fewer bits per element) reduces the lattice dimension in bits,
+   requiring either larger $d$ or more rows $\kappa$ to maintain the same
+   security level.
+
+3. **Extension-field soundness.** If the proof system samples challenges
+   from $\mathbb{F}_{q^k}$ with $q^k \geq 2^{128}$, a smaller $q$
+   forces a larger extension degree $k$, which increases proof size
+   (each challenge is $k$ field elements) and verifier cost.
+
+### Ideal $(q, \eta)$ pairs for ABBA
+
+| Pair | ABBA viable? | Notes |
+|---|---|---|
+| Goldilocks + $\Phi_{128}$ | **best** | Even $n = 64$: 25% compression confirmed. $128 \mid q-1$ ($v_2 = 32$): NTT available. 64-bit field: strong per-element security. Already benchmarked (1.4$\times$ overhead). |
+| Baby Bear + $\Phi_{128}$ | **good** | Same 25% compression. $128 \mid q-1$ ($v_2 = 27$): NTT available. 2$\times$ faster arithmetic. Needs extension field ($k = 5$) for 128-bit soundness. Benchmarked (1.4-1.6$\times$ overhead). |
+| Goldilocks + $\Phi_{256}$ | **good** | Even $n = 128$: 25% compression holds. $256 \mid q-1$: NTT available. Larger $D_K = 64$ means more work per operation but fewer rows $\kappa$ needed for the same security. Not yet benchmarked. |
+| Baby Bear + $\Phi_{256}$ | **good** | Same as above but faster per element. $256 \mid q-1$: NTT available. |
+| Goldilocks + $\Phi_{81}$ | **bad** | Odd $n = 81$: parity obstruction, ABBA is 50% *larger* than Ajtai. $81 \nmid q-1$: no NTT. This is Nightstream's current configuration; ABBA does not help here. |
+| Baby Bear + $\Phi_{81}$ | **bad** | Same parity obstruction. $81 \nmid q-1$: no NTT. |
+| Mersenne31 + $\Phi_{128}$ | **problematic** | Even $n$: 25% compression holds algebraically. But $v_2(q-1) = 1$: no NTT for any power-of-two cyclotomic beyond $\Phi_2$. Ring multiplication is $O(d^2)$ schoolbook, which is prohibitively slow for $d = 64$. |
+| Goldilocks + $\Phi_{64}$ | **good** | Even $n = 32$: compression holds. $D_K = 16$, $T_0 = 24$: very small ring, fast operations. But $n^+ = 8$, so ComSIS security per row is low; needs more rows $\kappa$. NTT available ($64 \mid q-1$). |
+| BN254 scalar + $\Phi_{128}$ | **poor fit** | Even $n$: compression holds. But 254-bit field eliminates the small-field advantage that motivates lattice commitments. ABBA's pay-per-bit is irrelevant when each field element is already 254 bits. |
+
+### Selection criteria
+
+A good $(q, \eta)$ pair for ABBA should satisfy:
+
+1. **$n$ is even** (so $\eta$ is a power of two, or more generally
+   $4 \mid \eta$). This is the hard requirement for the 25% compression.
+2. **$\eta \mid q - 1$** (NTT compatibility). Without this, ring
+   multiplication is too slow for practical commitment schemes.
+3. **$q$ fits in a machine word** (31--64 bits). This is the small-field
+   advantage that makes lattice commitments competitive with
+   hash-based ones.
+4. **$D_K = \varphi(\eta)/2 \geq 16$** (sufficient ComSIS security per
+   row). Smaller $D_K$ means the ComSIS lattice dimension $3n^+$ is too
+   small for 128-bit security without an impractical number of rows.
+5. **$q^k \geq 2^{128}$ for moderate $k$** (extension-field soundness
+   without excessive proof blowup). Goldilocks ($k = 2$) is better than
+   Baby Bear ($k \geq 5$) on this axis.
+
+The sweet spot is **Goldilocks + $\Phi_{128}$**: it satisfies all five
+criteria with $D_K = 32$, $n^+ = 16$, NTT available, and $k = 2$ for
+128-bit soundness. Baby Bear + $\Phi_{128}$ is the throughput-optimised
+alternative, trading extension-field cost for 2$\times$ faster
+arithmetic.
