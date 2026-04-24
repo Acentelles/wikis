@@ -220,7 +220,7 @@ The residual threat is narrow: a compromise of the proprietary infrastructure co
 
 The solver proof $\pi_{\mathsf{SMTsolver}}$ has two instantiation options:
 
-1. **Full solver in Jolt.** Oaksive (Rust SMT solver) compiled to RISC-V runs inside Jolt. Up to 50 rules within a ~2s proving budget. Provides solver-execution binding (the verifier knows *which* solver ran).
+1. **Full solver in Jolt.** oxiz (Rust SMT solver) compiled to RISC-V runs inside Jolt. Up to 50 rules within a ~2s proving budget. Provides solver-execution binding (the verifier knows *which* solver ran).
 2. **Checker-based.** The solver runs natively and emits a certificate. A small checker (LRAT for SAT, Alethe for SMT) runs inside the zkVM. The ZK proof attests "there exists a certificate that passes this check." The certificate is a private witness (important for policy hiding). Cost scales with checker complexity (near-linear), not solver complexity (exponential worst-case).
 
 The checker-based approach sidesteps the SMT proof-format standardisation debate: the ZK proof *is* the portable, succinct proof format.

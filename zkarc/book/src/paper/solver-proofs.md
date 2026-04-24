@@ -4,12 +4,12 @@
 
 ### Full solver in Jolt
 
-Oaksive (a Rust SMT solver) is compiled to RISC-V and runs inside Jolt. The
+oxiz (a Rust SMT solver) is compiled to RISC-V and runs inside Jolt. The
 proof attests to the entire execution trace, including the solver's bytecode
 commitment (solver-execution binding).
 
 **Proving budget.** For policies up to 50 rules (matching real-world focused
-policy documents), Oaksive completes within the RISC-V cycle budget that Jolt
+policy documents), oxiz completes within the RISC-V cycle budget that Jolt
 can prove in approximately 2 seconds. The rule count is the binding constraint
 on policy complexity.
 

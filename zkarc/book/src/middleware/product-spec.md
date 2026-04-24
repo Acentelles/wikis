@@ -43,7 +43,7 @@ the counterparty.
   provable in Jolt Atlas).
 - Hardcoded extraction rules (for v0; not provable, extraction is trusted).
 
-**SMT solver.** Oaksive compiled to RISC-V, running inside Jolt. Checks the
+**SMT solver.** oxiz compiled to RISC-V, running inside Jolt. Checks the
 extracted claims against the committed policy. Produces
 $\pi_{\mathsf{SMTsolver}}$.
 
@@ -84,7 +84,7 @@ point: the action fires as a consequence of proved, policy-checked code.
 |-----------|------|-------|
 | **Jolt** | RISC-V zkVM for solver proof | Needs RISC-V compilation target |
 | **Jolt Atlas** | ONNX zkML for extraction/classification proof | Needs ONNX model export |
-| **Oaksive** | Rust SMT solver | Compiled to RISC-V for in-circuit solving |
+| **oxiz** | Rust SMT solver | Compiled to RISC-V for in-circuit solving |
 | **ARc or equivalent SLM** | Claim extraction | ARc's proprietary model (agreement-check) or fine-tuned open model |
 | **HyperKZG SRS** | Polynomial commitment scheme | Generated once, shared across all proofs |
 
@@ -100,7 +100,7 @@ The smallest shippable thing.
 2. The agent sends POST requests to the middleware instead of the counterparty.
 3. The middleware extracts claims from the action using hardcoded extraction
    rules (no ML, extraction is trusted).
-4. The middleware runs Oaksive inside Jolt, produces
+4. The middleware runs oxiz inside Jolt, produces
    $\pi_{\mathsf{SMTsolver}}$.
 5. The middleware forwards the request to the counterparty with the proof
    attached as an HTTP header (or JSON envelope).
@@ -167,7 +167,7 @@ Agent ──(action)──► │  Interceptor                            │
                     │  Claim Extractor ──── π_SMTplan (v1+)   │
                     │      │                                  │
                     │      ▼                                  │
-                    │  Oaksive (in Jolt) ── π_SMTsolver       │
+                    │  oxiz (in Jolt) ── π_SMTsolver       │
                     │      │                                  │
                     │      ▼                                  │
                     │  Proof Aggregator                       │

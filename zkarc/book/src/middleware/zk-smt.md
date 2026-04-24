@@ -16,7 +16,7 @@ Agent                              Middleware                    Counterparty
   │                                    │                              │
   │  3. Extracts claims C_SMT from A   │                              │
   │                                    │                              │
-  │  4. Runs Oaksive inside Jolt:      │                              │
+  │  4. Runs oxiz inside Jolt:      │                              │
   │     Solve(P_SMT ∧ C_SMT) = b      │                              │
   │     Produces proof π               │                              │
   │                                    │                              │
