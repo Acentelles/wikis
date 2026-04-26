@@ -570,6 +570,90 @@ $$
 for invertible ideals $I$ in the natural order of the quaternion algebra,
 when $q$ is completely split in $\mathcal{O}_K$.
 
+### Why the structure cuts both ways
+
+It is tempting to read ComSIS as plain Module-SIS at
+$3n^+ \times 4n^+ m$ instead of $4n^+ \times 4n^+ m$, i.e., a structured
+SIS where the codomain has shrunk by 25% (the "row-rank reduction"; you
+can see it directly by fixing a $\mathbb{Z}$-basis of $\Lambda$ and
+writing $F_{\mathbf{a}}$ as an $\mathbb{F}_q$-matrix, which has rows
+constrained to $T_0$). That view captures the *concrete*-security side
+of the trade; it is what the Lattice-Estimator drop in [Security
+level](#security-level) below measures.
+
+But the row-rank reduction does not come from arbitrary structure: it
+comes from the ring identity $\operatorname{Tr}(ab) = \operatorname{Tr}(ba)$,
+which forces every commutator into the traceless subspace. That same
+ring origin pays a *structural dividend* on the worst-case side, and
+the dividend is what the worst-case-to-average-case reduction relies
+on. The chain has three steps, all of which need ring arithmetic:
+
+**1. The commutator subgroup and the commutator lattice (Definition 26).**
+For an ideal $\mathcal{I}\subset\Lambda$, the paper defines
+
+$$
+[\mathcal{I}, \Lambda] \;=\; \left\{\sum_i [x_i, y_i]\;:\;x_i\in\mathcal{I},\, y_i\in\Lambda\right\} \;\subset\; \mathcal{I},
+$$
+
+an additive subgroup of $\mathcal{I}$. Under the canonical embedding it
+is a sublattice of the ambient ideal lattice $\mathcal{I}$, the
+*commutator lattice*. There is no analogue of this construction in plain
+Module-SIS; it is purely ring-arithmetic.
+
+**2. ComSIS solutions live in the commutator lattice (Corollary 3).**
+A ComSIS solution is, by definition, a vector $\mathbf{z}$ with
+$\sum_i [a_i, z_i] = 0$, hence the components of $\mathbf{z}$ produce a
+sum-of-commutators that vanishes mod $q$. Lifted appropriately, this
+places $\mathbf{z}$ inside the commutator lattice of an ideal built
+from $\mathbf{a}$. A bare $3n^+$-row SIS instance not derived from a
+ring would have no such constraint on its solutions.
+
+**3. Short vectors in the commutator lattice are short vectors in the
+ideal (Proposition 3).** The commutator sublattice is not far from the
+ideal it sits inside:
+
+$$
+\lambda_1([\mathcal{I},\Lambda]) \;\leq\; 2\,\lambda_1(\mathcal{I}).
+$$
+
+Concretely, given a shortest $v = v_0 + uv_1 \in \mathcal{I}$, the
+element $w = [v, u] = \xi(\theta(v_1) - v_1) + u(\theta(v_0) - v_0)$
+lies in $[\mathcal{I}, \Lambda]$ with $\|w\| \leq 2\|v\|$. So a short
+vector in the commutator lattice is automatically a short vector in
+$\mathcal{I}$, up to a constant approximation factor.
+
+**Composition.** Combining the three steps:
+
+```
+ComSIS solution
+   => short vector in [I, Λ]       (step 2; ring arithmetic)
+   => short vector in I, factor 2  (step 3; geometric tightness)
+   => approx-SVP_I solution         (definition of approx-SVP)
+```
+
+This is the engine behind the SIVP/approx-SVP $\to$ ComSIS reduction.
+The naive "row-rank reduction" framing loses this chain entirely: it
+sees only a smaller codomain. A *naked* SIS at $3n^+$ rows,
+unconstrained by ring arithmetic, would have the same row-rank
+reduction without earning the dividend, and would be strictly easier to
+attack than ComSIS.
+
+**I-ComSIS uses the same lever.** The reduction from I-CSIS$^\times$
+(inhomogeneous CSIS in the natural order, with invertible keys) to
+I-ComSIS conjugates a CSIS instance by an invertible quaternion to turn
+the linear equation $\mathbf{a}\cdot\mathbf{z} = v$ into a commutator
+equation involving the map $a \mapsto [a, u]$. Without ring
+multiplication this conjugation has no analogue; with it, I-CSIS$^\times$
+maps into I-ComSIS in polynomial time, transferring CSIS's worst-case
+hardness across.
+
+The 25% row-rank reduction is therefore the price the ring structure
+charges; the commutator-lattice/ideal-lattice tightness is the dividend
+it pays. Both flow from the *same* identity $[a,b] = ab - ba$, which is
+exactly why ComSIS is harder than a "naked SIS at $3n^+$ rows" would be:
+the structure that compresses the codomain also pins ComSIS solutions to
+a useful sublattice of an ideal.
+
 ### Security level
 
 ComSIS instances correspond to SIS instances on $3n^+ \times 4n^+ m$
@@ -577,7 +661,11 @@ matrices (vs $4n^+ \times 4n^+ m$ for standard module-SIS), due to the
 commutator's compression from $4n^+$ to $3n^+$ dimensions. Running the
 Lattice Estimator on ML-DSA parameters ($N = 2048$) while varying
 dimension from 2048 to 1536 gives estimated bit-security of 288.2 and
-209.6, respectively: a drop from NIST category V to category III.
+209.6, respectively: a drop from NIST category V to category III. This
+is the *concrete-security price* paid for the row-rank drop discussed
+above; the worst-case-to-average-case reduction continues to bite at
+this dimension because the ring-arithmetic dividend (Steps 1-3) is
+unaffected.
 
 ## Why Nightstream uses $\Phi_{81}$ and whether it can change
 
