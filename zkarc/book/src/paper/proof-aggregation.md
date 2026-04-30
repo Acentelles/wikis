@@ -66,3 +66,6 @@ The verifier checks one proof, sees the commitments and the verdict, done.
   proofs.
 - Two-tier uses folding where cheap (same session) and recursion only where
   necessary (cross session). The setup-time proof is a reusable credential.
+
+The runtime that enforces this split (Session, RecursiveCredential, Receipt)
+is described on the [folding sessions](./folding-sessions.md) page.
