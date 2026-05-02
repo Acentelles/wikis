@@ -8,6 +8,7 @@
     - [Solver proofs](./paper/solver-proofs.md)
     - [Hidden-policy trust](./paper/hidden-policy-trust.md)
     - [Proof aggregation](./paper/proof-aggregation.md)
+    - [Efficient recursion for aggregation](./paper/efficient-recursion.md)
     - [Folding sessions](./paper/folding-sessions.md)
     - [Model and input hiding](./paper/hiding.md)
     - [Related work](./paper/related-work.md)

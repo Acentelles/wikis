@@ -35,6 +35,7 @@ jobs:
           mdbook build pq/book -d "$GITHUB_WORKSPACE/site/pq"
           mdbook build jolt-atlas/book -d "$GITHUB_WORKSPACE/site/jolt-atlas"
           mdbook build zkarc/book -d "$GITHUB_WORKSPACE/site/zkarc"
+          mdbook build sum-check/book -d "$GITHUB_WORKSPACE/site/sum-check"
 
       - uses: actions/configure-pages@v5
 

@@ -7,6 +7,7 @@ Published books:
 
 - `pq/` , Post-Quantum Cryptography Notes (isogeny- and lattice-based)
 - `zkarc/` , zkARc: Verifiable Guardrails for Agentic Commerce
+- `sum-check/` , Sum-Check and Fast Proving
 
 ## Local build
 
