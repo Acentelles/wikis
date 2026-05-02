@@ -10,6 +10,7 @@
     - [Proof aggregation](./paper/proof-aggregation.md)
     - [Efficient recursion for aggregation](./paper/efficient-recursion.md)
     - [Folding sessions](./paper/folding-sessions.md)
+        - [Prototype](./paper/folding-sessions-prototype.md)
     - [Model and input hiding](./paper/hiding.md)
     - [Related work](./paper/related-work.md)
 - [Middleware](./middleware/middleware.md)

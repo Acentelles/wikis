@@ -191,32 +191,10 @@ repos already have HyperKZG plumbing.
 ## Prototype
 
 A prototype implementation of the session API lives at
-`code/zkarc-folding-sessions/`. It is a small Rust workspace with no
-arkworks dependency, exercising the orchestration with a `MockBackend`:
-
-- `crates/sessions/src/`: `Session`, `Component`, `RecursiveCredential`,
-  `Receipt`, `BlindFoldBackend` trait, plus a `Transcript` shim.
-- `crates/sessions/examples/zkarc_pipeline.rs`: end-to-end mock walk-through
-  matching the snippet above (setup session produces a policy credential;
-  action session folds `NLplan`, `SMTplan`, `SMTsolver` and attaches the
-  policy credential).
-- `crates/sessions/tests/orchestration.rs`: five tests covering Tier 1
-  folding, Tier 2 attachment, malformed bindings, empty session, and
-  cross-backend rejection.
-
-The prototype's purpose is to fix the API surface so a follow-up
-integration step can replace the `MockBackend` with adapters over
-`jolt_core::subprotocols::blindfold::BlindFoldProver` and
-`joltworks::subprotocols::blindfold::BlindFoldProver` without churning
-session-level code.
-
-## Open work
-
-1. Replace `MockBackend` with adapters over the real BlindFold provers in
-   each upstream repo.
-2. Implement the in-circuit verifier subcircuit for Tier 2. Smallest first
-   cut: a HyperKZG pairing-check subcircuit over BN254, hard-coded to
-   verify a single Atlas $\pi_{\mathsf{SMTpolicy}}$, generalised after.
-3. Run an end-to-end measurement on a 50-rule policy plus a small ONNX
-   answer verifier plus a Rust SMT solver, and report Spartan-only verifier
-   time.
+`code/zkarc-folding-sessions/`. It has two crates: a dependency-free
+core that owns the trait, the session state machine, and a mock
+backend, and a real adapter against
+`joltworks::subprotocols::blindfold` that exercises the Tier-1 fold
+end-to-end against arkworks BN254. The
+[Prototype](./folding-sessions-prototype.md) page covers status,
+dependency wiring, and what is left.
