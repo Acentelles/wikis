@@ -39,8 +39,8 @@ current status:
 |---|---|---|
 | `BlindFoldBackend` trait | ✅ done | Three associated types: `Instance`, `FoldedInstance`, `Decider`. |
 | `Component<I>`, `ClaimHandle`, `Session::add` | ✅ done | Generic over the backend's `Instance`. |
-| `Session::bind` | partial | Records the link; does not yet emit an `OutputClaimConstraint`. |
-| `Session::attach` (Tier 2) | partial | Records the credential and binds it to a local input slot, but the in-circuit verifier subcircuit is not yet implemented. |
+| `Session::bind` | API done | Records the link as an `EmittedBinding`. The `bindings::compile_bindings` helper turns these into typed `(from, to)` opening-id pairs against any `OpeningResolver`; full materialisation as `OutputClaimConstraint`s requires real (non-synth) components with a known witness layout. |
+| `Session::attach` (Tier 2) | out-of-circuit done, in-circuit stubbed | The session calls `BlindFoldBackend::verify_credential` before accepting the credential; for the Jolt-Atlas backend this runs the real Spartan + Hyrax-opening verifier and rejects tampered credentials at attach time (test `attach_runs_real_verifier_and_rejects_tampered_credentials`). The in-circuit version (compiling the same verifier into constraints on the session's R1CS) is the work the `recursion` module documents. |
 | `Session::finalize` + `Receipt` | done (Atlas backend) | Builds a receipt with the folded relaxed R1CS instance and a real `AtlasDecider`: outer Spartan sumcheck, inner sumcheck, and Hyrax openings of `W` and `E`. A matching verifier on the same backend accepts the proof end-to-end (`prover_decider_verifies_end_to_end` test) and rejects tampered final claims (`verifier_rejects_tampered_decider`). |
 
 What works end-to-end against real arkworks: the Tier-1 fold itself.
@@ -150,6 +150,49 @@ Real-adapter tests (`crates/sessions-jolt-atlas/src/{lib,pad}.rs`):
 - `verifier_rejects_tampered_decider`: flipping `az_r` makes the
   verifier return `OuterClaimMismatch` (or one of the related Spartan
   errors).
+- `recursion_module_advertises_stub_status`: locks the Tier-2
+  in-circuit interface as `Stub` so callers can branch on whether
+  in-circuit recursion is active.
+
+Two integration tests in `crates/sessions-jolt-atlas/tests/`:
+
+- `session_with_real_backend_folds_three_components_and_decides`:
+  drive the real `JoltAtlasBackend` through the full
+  `Session::add → bind → expose → finalize` flow; the resulting
+  `Receipt` carries a real Spartan + inner-sumcheck decider.
+- `session_add_segments_against_real_backend`: vertical folding via
+  `Session::add_segments` against the real adapter.
+- `attach_runs_real_verifier_and_rejects_tampered_credentials`:
+  setup-time session produces a credential, per-action session
+  attaches it; the backend verifies cryptographically. A flipped
+  `az_r` is rejected with `CredentialVerificationFailed`.
+- `credential_serialization_round_trip`: `AtlasFolded` (manual impl
+  that omits the transcript) and `AtlasDecider` round-trip through
+  `CanonicalSerialize`/`Deserialize`; the deserialised credential
+  still verifies. This is what makes "setup-time proofs cached for
+  many actions" actually feasible.
+
+Two unit tests for the per-component ZK fold
+(`crates/sessions-jolt-atlas/src/lib.rs`):
+
+- `blind_fold_instance_keeps_satisfaction`: feeding a satisfying
+  R1CS pair through `JoltAtlasBackend::blind_fold_instance` (which
+  samples a fresh random satisfying pair, computes the cross-term,
+  derives `r` from a self-contained `Blake2bTranscript`, and folds)
+  produces a still-satisfying instance.
+- `session_fold_of_two_blind_folded_instances_keeps_satisfaction`:
+  two ZK-folded instances themselves session-fold cleanly. This is
+  the BlindFold construction in full: each component does its own
+  random-instance fold *before* the session-level fold composes
+  them.
+
+A runnable example, `cargo run --example zkarc_pipeline_real -p
+zkarc-sessions-jolt-atlas`, drives the entire flow end-to-end:
+setup-time session produces a credential, the credential is
+serialised and deserialised through arkworks, a per-action session
+attaches the deserialised credential (the backend cryptographically
+verifies it), three more components fold in, and the receipt is
+verified.
 
 ## Dependency wiring (the part that took the most time)
 
@@ -186,24 +229,34 @@ module respectively.
 
 ## What is not yet done
 
-These are the open items from the prototype's perspective. Each maps
-to a concrete file or set of files.
+The prototype now exercises the BlindFold construction in full:
+per-component random-instance fold, session-level Tier-1 Nova fold,
+real Spartan + inner sumcheck + Hyrax-opening decider, attach-time
+out-of-circuit Tier-2 verification, arkworks-serialisable
+credentials, and a runnable end-to-end example. The remaining gaps
+are:
 
-- **`OutputClaimConstraint` emission** in `Session::bind` and
-  `Session::attach` (`crates/sessions/src/session.rs`). At present the
-  binding is recorded but does not propagate into the next component's
-  `StageConfig::initial_input`.
-- **In-circuit BlindFold verifier subcircuit** for Tier 2. Smallest
-  first cut: a HyperKZG pairing-check subcircuit hard-coded for
-  $\pi_{\mathsf{PMC}}$, following
+- **Real components, not synth instances.** Every test currently
+  produces instances via `sample_random_satisfying_pair`. To wire
+  `compile_bindings` end-to-end into `pad::unified_r1cs` (so that
+  `Session::bind` emits real `OutputClaimConstraint`s on the unified
+  R1CS), each component needs a real `OpeningResolver` impl that
+  knows where its named inputs and outputs live in the witness. This
+  arrives when the prover code that produces an `AtlasInstance` from
+  a real Atlas trace lands.
+- **In-circuit Tier-2 verifier subcircuit.** The out-of-circuit
+  Tier-2 path is wired (`Session::attach` runs the real verifier),
+  but for full credential aggregation inside the session R1CS the
+  verifier itself needs to be compiled to constraints. The
+  `recursion` module stubs `ExtendedProof`, `CredentialAnchor`, and
+  `RecursiveVerifierBackend`, and the design follows
   [Efficient recursion for aggregation](./efficient-recursion.md).
-- **Block-diagonal padding** (the alternative to `unified_r1cs` that
-  works on already-built instances). Stub at
-  `crates/sessions-jolt-atlas/src/pad.rs`.
-- **Vertical-folding support** (segmented Jolt runs that the
-  Proving-budget paragraph in the paper now claims). Requires either
-  repeated `add` calls of the same role or an explicit
-  `add_segments` helper.
+  The full implementation requires the HyperKZG pairing-check
+  subcircuit and the auxiliary-proof Hyrax prover over Grumpkin.
+- **Block-diagonal padding** is intentionally not implemented. See
+  the rationale in `pad.rs`: for zkARc's preprocessing-time-known
+  per-action stack, `unified_r1cs` is strictly better than post-hoc
+  block-diagonal lifting.
 
 ## How this maps to the paper
 
